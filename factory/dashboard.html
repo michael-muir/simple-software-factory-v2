@@ -2,127 +2,236 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Software Factory</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #0f1115; --col: #171a21; --card: #1f242e; --line: #2b313d;
     --text: #d7dce4; --dim: #8b93a1;
     --pass: #3fb67c; --changes: #e0604f; --pending: #4a5261;
-    --human: #e8b14e; --merged: #5a8df0;
+    --human: #e8b14e; --merged: #5a8df0; --info: #b48ef0;
+    --low: #3fb67c; --medium: #e8b14e; --high: #e0604f;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
-  header { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px; }
+  a { color: var(--merged); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px; flex-wrap: wrap; }
   header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
   header span { color: var(--dim); font-size: 12px; }
-  header .live { margin-left: auto; color: var(--text); }
-  .board { display: grid; grid-template-columns: repeat(7, minmax(140px, 1fr));
+  header .stats { margin-left: auto; color: var(--text); display: flex; gap: 14px; }
+  header .stats b { font-weight: 600; }
+  .board { display: grid; grid-template-columns: repeat(10, minmax(150px, 1fr));
            gap: 10px; padding: 0 20px 20px; align-items: start; overflow-x: auto; }
   .col { background: var(--col); border-radius: 10px; padding: 10px; min-height: 140px; }
-  .col h2 { margin: 2px 4px 10px; font-size: 11px; font-weight: 600;
+  .col h2 { margin: 2px 4px 10px; font-size: 11px; font-weight: 600; display: flex;
             text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+  .col h2 .n { margin-left: auto; }
   .col.needs-human h2 { color: var(--human); }
+  .col.needs-info h2 { color: var(--info); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
           padding: 10px; margin-bottom: 8px; cursor: pointer; }
   .card:hover, .card:focus-visible { border-color: var(--dim); outline: none; }
-  .card.human { border-color: var(--human); box-shadow: 0 0 0 1px var(--human); }
-  .card .id { font-size: 11px; color: var(--dim); font-family: ui-monospace, monospace; }
-  .card .title { margin: 2px 0 8px; font-weight: 600; }
-  .modal-head .sub { display: block; font-weight: 400; font-size: 11px; color: var(--dim);
-                     font-family: ui-monospace, monospace; margin-top: 2px; }
-  .round { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
-  .chips { display: flex; gap: 5px; }
-  .chip { flex: 1; text-align: center; font-size: 10px; padding: 3px 0;
+  .card.needs-human { border-color: var(--human); box-shadow: 0 0 0 1px var(--human); }
+  .card.needs-info { border-color: var(--info); }
+  .card.rejected { opacity: .55; }
+  .card .top { display: flex; gap: 6px; align-items: center; font-size: 11px;
+               color: var(--dim); font-family: ui-monospace, monospace; }
+  .card .top .links { margin-left: auto; display: flex; gap: 6px; white-space: nowrap; }
+  .card .title { margin: 3px 0 6px; font-weight: 600; }
+  .card .note { font-size: 11px; color: var(--human); margin: -2px 0 6px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 10px; padding: 0 6px; border-radius: 9px; border: 1px solid currentColor;
+          text-transform: lowercase; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .pill.low { color: var(--low); } .pill.medium { color: var(--medium); }
+  .pill.high { color: var(--high); } .pill.merged { color: var(--merged); }
+  .pill.rejected { color: var(--dim); }
+  .round { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
+  .round .r { font-size: 10px; color: var(--dim); width: 18px; font-family: ui-monospace, monospace; }
+  .chip { flex: 1 0 30px; text-align: center; font-size: 10px; padding: 2px 0;
           border-radius: 4px; background: var(--pending); color: #cfd4dc;
-          text-transform: lowercase; }
+          text-transform: lowercase; white-space: nowrap; overflow: hidden; }
+  .chip.gate { flex: 0 0 34px; }
   .chip.PASS { background: var(--pass); color: #06281a; }
-  .chip.CHANGES { background: var(--changes); color: #2d0b07; }
+  .chip.CHANGES, .chip.FAIL, .chip.INVALID { background: var(--changes); color: #2d0b07; }
+  .meta { display: flex; gap: 10px; font-size: 11px; color: var(--dim); margin-top: 6px;
+          white-space: nowrap; }
+  .meta .cost { margin-left: auto; }
   .empty { color: var(--dim); font-size: 12px; padding: 4px; }
+  .notice { margin: 0 20px 12px; padding: 10px 14px; border-radius: 8px;
+            background: var(--col); color: var(--dim); font-size: 13px; }
+  .notice code { color: var(--text); }
   /* modal */
   dialog { background: var(--col); color: var(--text); border: 1px solid var(--line);
-           border-radius: 12px; width: min(760px, 90vw); max-height: 85vh; padding: 0; }
+           border-radius: 12px; width: min(860px, 94vw); max-height: 90vh; padding: 0; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
-  .modal-head { display: flex; justify-content: space-between; align-items: center;
-                padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .modal-head { display: flex; justify-content: space-between; align-items: flex-start;
+                padding: 14px 18px; border-bottom: 1px solid var(--line); gap: 12px; }
+  .modal-head .sub { display: block; font-weight: 400; font-size: 11px; color: var(--dim);
+                     font-family: ui-monospace, monospace; margin-top: 2px; }
   .modal-head button { background: none; border: none; color: var(--dim);
                        font-size: 18px; cursor: pointer; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+           gap: 6px 14px; padding: 10px 18px; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .facts div span { display: block; color: var(--dim); font-size: 10px;
+                    text-transform: uppercase; letter-spacing: .08em; }
   .tabs { display: flex; gap: 6px; padding: 10px 18px 0; flex-wrap: wrap; }
   .tabs button { background: var(--card); border: 1px solid var(--line); color: var(--text);
                  border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
   .tabs button.active { border-color: var(--merged); color: var(--merged); }
+  .tabs button .v { margin-left: 5px; font-size: 10px; }
+  .tabs button .v.PASS, .tabs button .v.APPROVE, .tabs button .v.READY, .tabs button .v.ACCEPT { color: var(--pass); }
+  .tabs button .v.CHANGES, .tabs button .v.FAIL, .tabs button .v.ESCALATE,
+  .tabs button .v.BLOCKED, .tabs button .v.REJECT { color: var(--changes); }
+  .tabs button .v.NEEDS-INFO { color: var(--info); }
+  .summary { margin: 12px 18px 0; padding: 10px 14px; border-left: 3px solid var(--merged);
+             background: var(--card); border-radius: 0 8px 8px 0; font-size: 13px; }
+  .summary .verdict { font-weight: 600; margin-bottom: 4px; font-family: ui-monospace, monospace; }
+  .summary ul { margin: 0; padding-left: 18px; }
   pre.doc { white-space: pre-wrap; padding: 14px 18px; margin: 0; overflow: auto;
-            max-height: 60vh; font: 12.5px/1.6 ui-monospace, monospace; color: var(--text); }
+            max-height: 52vh; font: 12.5px/1.6 ui-monospace, monospace; color: var(--text); }
+  .history { padding: 0 18px 14px; font-size: 11px; color: var(--dim);
+             font-family: ui-monospace, monospace; max-height: 120px; overflow: auto; }
 </style>
 </head>
 <body>
 <header>
   <h1>SOFTWARE FACTORY</h1>
-  <span>spec → build → review ×4 → approve → merge · one worktree per job · polls board.json</span>
-  <span class="live" id="live"></span>
+  <span>issue → intake → spec → build → gate → routed reviews → approve → PR merge · polls board.json</span>
+  <span class="stats" id="stats"></span>
 </header>
+<div id="notice"></div>
 <div class="board" id="board"></div>
 
 <dialog id="modal">
   <div class="modal-head"><div><strong id="modal-title"></strong>
     <span class="sub" id="modal-sub"></span></div>
     <button onclick="modal.close()" aria-label="Close">✕</button></div>
+  <div class="facts" id="facts"></div>
   <div class="tabs" id="tabs"></div>
+  <div id="summary"></div>
   <pre class="doc" id="doc"></pre>
+  <div class="history" id="history"></div>
 </dialog>
 
 <script>
-const STAGES = ["spec", "build", "review", "approval", "merge", "needs-human", "merged"];
-const IN_FLIGHT = ["spec", "build", "review", "approval", "merge"];
-const REVIEWERS = ["security", "ux", "ui", "code"];
+const COLUMNS = [
+  ["intake", ["intake"]], ["spec", ["spec"]], ["build", ["build"]], ["gate", ["gate"]],
+  ["review", ["review"]], ["approval", ["approval"]], ["merge", ["merge"]],
+  ["needs-info", ["needs-info"]], ["needs-human", ["needs-human"]], ["done", ["merged", "rejected"]],
+];
+const SHORT = { security: "sec" };
+const RUNNING = ["intake", "spec", "build", "gate", "review", "approval", "merge"];
 const board = document.getElementById("board");
 const modal = document.getElementById("modal");
+let current = null;   // { job } open in the modal
 
-let lastBoard = null;
-async function refresh() {
-  try {
-    const res = await fetch("board.json", { cache: "no-store" });
-    const text = await res.text();
-    const jobs = JSON.parse(text).jobs || [];
-    if (text === lastBoard) return;  // unchanged: keep focus and hover state
-    lastBoard = text;
-    render(jobs);
-  } catch (e) { /* mid-write or server gone: keep last render */ }
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = v => v == null ? "—" : `$${Number(v).toFixed(2)}`;
+function duration(job) {
+  if (!job.created) return "—";
+  const end = job.finished ? Date.parse(job.finished) : Date.now();
+  const mins = Math.max(0, Math.round((end - Date.parse(job.created)) / 60000));
+  return mins >= 60 ? `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, "0")}m` : `${mins}m`;
 }
 
-function render(jobs) {
-  const live = jobs.filter(j => IN_FLIGHT.includes(j.stage)).length;
-  document.getElementById("live").textContent = live ? `${live} in flight` : "idle";
+let last = null;
+async function refresh() {
+  let text;
+  try {
+    const res = await fetch("board.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    text = await res.text();
+  } catch (e) {
+    if (last === null) notice("No <code>board.json</code> yet. Run <code>factory/bin/board index</code> " +
+      "(or start a job), and serve this folder: <code>python3 -m http.server</code>.");
+    return;
+  }
+  if (text === last) return;   // unchanged: keep focus and hover state
+  let data;
+  try { data = JSON.parse(text); } catch (e) { return; }   // mid-write
+  last = text;
+  notice("");
+  render(data);
+  if (current && modal.open) {
+    const fresh = (data.jobs || []).find(j => j.id === current.job.id);
+    if (fresh) { current.job = fresh; fillFacts(fresh); }
+  }
+}
+
+function notice(html) {
+  document.getElementById("notice").innerHTML = html ? `<div class="notice">${html}</div>` : "";
+}
+
+function render(data) {
+  const jobs = data.jobs || [];
+  const live = jobs.filter(j => RUNNING.includes(j.stage)).length;
+  const waiting = jobs.filter(j => j.stage === "needs-human").length;
+  const cost = jobs.reduce((t, j) => t + (j.cost_usd || 0), 0);
+  document.getElementById("stats").innerHTML =
+    `<span><b>${live}</b> / ${esc(data.concurrency ?? "?")} running</span>` +
+    (waiting ? `<span style="color:var(--human)"><b>${waiting}</b> need you</span>` : "") +
+    `<span>${money(cost)} total</span>`;
   board.innerHTML = "";
-  for (const stage of STAGES) {
+  // Columns with jobs get the room; empty ones stay narrow.
+  board.style.gridTemplateColumns = COLUMNS.map(([, st]) =>
+    jobs.some(j => st.includes(j.stage)) ? "minmax(180px, 1.4fr)" : "minmax(84px, .6fr)").join(" ");
+  for (const [name, stages] of COLUMNS) {
+    const inCol = jobs.filter(j => stages.includes(j.stage))
+                      .sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
     const col = document.createElement("div");
-    col.className = "col" + (stage === "needs-human" ? " needs-human" : "");
-    col.innerHTML = `<h2>${stage}</h2>`;
-    const inStage = jobs.filter(j => j.stage === stage);
-    if (!inStage.length) col.insertAdjacentHTML("beforeend", `<div class="empty">—</div>`);
-    for (const job of inStage) col.appendChild(card(job));
+    col.className = `col ${name}`;
+    col.innerHTML = `<h2>${esc(name)}<span class="n">${inCol.length || ""}</span></h2>`;
+    if (!inCol.length) col.insertAdjacentHTML("beforeend", `<div class="empty">—</div>`);
+    for (const job of inCol) col.appendChild(card(job));
     board.appendChild(col);
   }
 }
 
-const esc = s => String(s).replace(/[&<>"']/g,
-  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function reviewersOf(job) { return Object.keys((job.agents || {}).reviewers || {}); }
+
+function roundRows(job, max = 3) {
+  const rows = [];
+  const total = job.round || 0;
+  for (let n = Math.max(1, total - max + 1); n <= total; n++) {
+    const gate = (job.gates || {})[n];
+    const merge = (job.merge_gates || {})[n];
+    const revs = (job.reviews || {})[n];
+    let chips = `<div class="chip gate ${esc(gate || "")}" title="gate">${gate ? "gate" : "·"}</div>`;
+    if (revs) chips += reviewersOf(job).map(r =>
+      `<div class="chip ${esc(revs[r] || "")}" title="${esc(r)}: ${esc(revs[r] || "pending")}">${esc(SHORT[r] || r)}</div>`).join("");
+    if (merge) chips += `<div class="chip gate ${esc(merge)}" title="merge gate">merge</div>`;
+    rows.push(`<div class="round"><span class="r">r${n}</span>${chips}</div>`);
+  }
+  return rows.join("");
+}
 
 function card(job) {
   const el = document.createElement("div");
-  el.className = "card" + (job.stage === "needs-human" ? " human" : "");
-  const chips = REVIEWERS.map(r => {
-    const v = String((job.reviews || {})[r] || "pending").toUpperCase();
-    const cls = v === "PASS" || v === "CHANGES" ? v : "pending";
-    return `<div class="chip ${cls}">${r}</div>`;
-  }).join("");
+  el.className = `card ${job.stage}`;
+  const issue = job.issue_url ? `<a href="${esc(job.issue_url)}" target="_blank" rel="noopener">#${esc(job.issue)}</a>`
+                              : (job.issue ? `#${esc(job.issue)}` : "");
+  const pr = job.pr_url ? `<a href="${esc(job.pr_url)}" target="_blank" rel="noopener">PR ${esc(job.pr)}</a>` : "";
+  const badge = job.stage === "merged" || job.stage === "rejected"
+    ? `<span class="pill ${job.stage}">${job.stage}</span>`
+    : (job.risk ? `<span class="pill ${esc(job.risk)}">${esc(job.risk)}</span>` : "");
+  const note = (job.stage === "needs-human" || job.stage === "needs-info") && job.note
+    ? `<div class="note" title="${esc(job.note)}">${esc(job.note)}</div>` : "";
   el.innerHTML = `
-    <div class="id">${esc(job.id)}</div>
-    <div class="title">${esc(job.title || job.feature || job.id)}</div>
-    ${job.round ? `<div class="round">round ${esc(job.round)}</div>` : ""}
-    <div class="chips">${chips}</div>`;
+    <div class="top"><span>${esc(job.id.split("-")[0])}</span>${badge}
+      <span class="links">${issue}${pr}</span></div>
+    <div class="title">${esc(job.title || job.id)}</div>
+    ${note}
+    ${roundRows(job)}
+    <div class="meta"><span>${job.round ? `round ${esc(job.round)}/${esc(job.max_round)}` : esc(job.stage)}</span>
+      <span>${duration(job)}</span><span class="cost">${money(job.cost_usd)}</span></div>`;
+  for (const a of el.querySelectorAll("a")) a.onclick = e => e.stopPropagation();
   el.tabIndex = 0;
   el.setAttribute("role", "button");
+  el.setAttribute("aria-label", `${job.id}, ${job.stage}`);
   el.onclick = () => openJob(job);
   el.onkeydown = e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openJob(job); }
@@ -130,15 +239,33 @@ function card(job) {
   return el;
 }
 
-function openJob(job) {
+function fillFacts(job) {
   document.getElementById("modal-title").textContent = `${job.id} · ${job.stage}`;
   document.getElementById("modal-sub").textContent =
     [job.branch, job.worktree].filter(Boolean).join(" · ");
-  const files = ["spec.md", "build.md"];
-  for (let k = 1; k <= (job.reworks || 0); k++) files.push(`rework-${k}.md`);
-  for (let n = 1; n <= (job.round || 0); n++)
-    for (const r of REVIEWERS) files.push(`round-${n}/review-${r}.md`);
-  files.push("decision.md");
+  const revs = Object.entries((job.agents || {}).reviewers || {}).map(([r, m]) => `${r} (${m})`).join(", ");
+  const link = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>` : "—";
+  const facts = [
+    ["issue", link(job.issue_url, `#${job.issue}`)],
+    ["pull request", link(job.pr_url, job.pr ? `#${job.pr}` : "")],
+    ["risk", esc(job.risk || "—")],
+    ["surfaces", esc((job.surfaces || []).join(", ") || "none")],
+    ["reviewers", esc(revs || "—")],
+    ["round", job.round ? `${esc(job.round)} of ${esc(job.max_round)}` : "—"],
+    ["cost (API-equivalent)", money(job.cost_usd)],
+    ["time", duration(job)],
+  ];
+  if (job.note) facts.push(["note", esc(job.note)]);
+  document.getElementById("facts").innerHTML =
+    facts.map(([k, v]) => `<div><span>${k}</span>${v}</div>`).join("");
+  document.getElementById("history").innerHTML = (job.history || []).slice().reverse()
+    .map(h => `${esc(h.at)}  ${esc(h.event)}`).join("<br>");
+}
+
+function openJob(job) {
+  current = { job };
+  fillFacts(job);
+  const files = job.files && job.files.length ? job.files : ["issue.md"];
   const tabs = document.getElementById("tabs");
   tabs.innerHTML = "";
   for (const f of files) {
@@ -147,8 +274,31 @@ function openJob(job) {
     b.onclick = () => showFile(job, f, b);
     tabs.appendChild(b);
   }
-  showFile(job, files[0], tabs.firstChild);
+  // Open on the file that explains where the job is now.
+  const prefer = { "needs-human": "decision.md", "needs-info": "intake.md", "rejected": "rejection.md" };
+  let want = files.includes(prefer[job.stage]) ? prefer[job.stage] : files[files.length - 1];
+  if (job.stage === "rejected" && !files.includes("rejection.md") && files.includes("intake.md")) want = "intake.md";
+  if (job.stage === "needs-human" && !files.includes("decision.md")) {
+    // The last round's failing gate or review explains why it stopped.
+    const n = job.round, revs = (job.reviews || {})[n] || {};
+    const bad = Object.keys(revs).find(r => revs[r] === "CHANGES");
+    if (bad) want = `round-${n}/review-${bad}.md`;
+    else if ((job.gates || {})[n] === "FAIL") want = `round-${n}/checks.md`;
+    else if (files.includes("build.md")) want = "build.md";
+  }
+  const idx = Math.max(0, files.indexOf(want));
+  showFile(job, files[idx], tabs.children[idx]);
   modal.showModal();
+}
+
+// "## Summary" bullets and the verdict line, shown above the full text.
+function summarize(text) {
+  const first = (text.split("\n").find(l => l.trim()) || "").trim();
+  const m = text.match(/^##\s+Summary\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/mi);
+  const bullets = m ? m[1].split("\n").map(l => l.trim()).filter(l => /^[-*]\s/.test(l))
+                       .map(l => l.replace(/^[-*]\s+/, "")) : [];
+  const verdict = /^(DECISION|STATUS|VERDICT|GATE)\s*:|^(APPROVE|ESCALATE|REJECTED)\b/.test(first) ? first : "";
+  return { verdict, bullets };
 }
 
 let shown = 0;  // ignore fetches that finish after a newer tab was clicked
@@ -156,13 +306,23 @@ async function showFile(job, file, btn) {
   const me = ++shown;
   document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
-  const doc = document.getElementById("doc");
   let text;
   try {
-    const res = await fetch(`jobs/${job.id}/${file}`, { cache: "no-store" });
+    const res = await fetch(`jobs/${encodeURIComponent(job.id)}/${file.split("/").map(encodeURIComponent).join("/")}`,
+                            { cache: "no-store" });
     text = res.ok ? await res.text() : `(${file} not written yet)`;
   } catch (e) { text = `(could not load ${file})`; }
-  if (me === shown) doc.textContent = text;
+  if (me !== shown) return;
+  const { verdict, bullets } = summarize(text);
+  document.getElementById("summary").innerHTML = verdict || bullets.length
+    ? `<div class="summary">${verdict ? `<div class="verdict">${esc(verdict)}</div>` : ""}` +
+      (bullets.length ? `<ul>${bullets.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : "") + `</div>`
+    : "";
+  document.getElementById("doc").textContent = text;
+  if (btn && verdict && !btn.querySelector(".v")) {
+    const v = verdict.replace(/^[A-Z]+\s*:\s*/, "").split(/\s/)[0];
+    btn.insertAdjacentHTML("beforeend", `<span class="v ${esc(v)}">${esc(v)}</span>`);
+  }
 }
 
 refresh();

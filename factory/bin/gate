@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""factory/bin/gate: run the repo's checks against a job's branch.
+
+  gate <job>            round gate → round-N/checks.md and round-N/checks.log
+  gate --merge <job>    after syncing with the base → round-N/merge-checks.md
+  gate --main           the checks on a clean copy of origin/<base> (install check)
+  gate --stop-hook      the builder's stop hook: exit 2 while the checks fail
+
+Prints `GATE: PASS` or `GATE: FAIL` and exits 0 or 1.
+
+Two rules make the gate trustworthy:
+- It always runs the MAIN checkout's factory/checks.sh, never the branch's,
+  so a branch can't change the checks it is judged by.
+- It fails any branch that touches a path in config.json `protected_paths`
+  (the factory's own files), compared with the merge base.
+It writes only its own files; factory/bin/board reads the verdict from them.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+FACTORY = Path(__file__).resolve().parent.parent
+REPO = FACTORY.parent
+CHECKS = FACTORY / "checks.sh"
+UNSET = "FACTORY-CHECKS-NOT-CONFIGURED"
+
+
+def config():
+    path = FACTORY / "config.json"
+    cfg = json.loads(path.read_text()) if path.exists() else {}
+    cfg.setdefault("base_branch", "main")
+    cfg.setdefault("protected_paths", ["factory/", ".claude/"])
+    cfg.setdefault("checks_timeout_sec", 1800)
+    return cfg
+
+
+def die(msg):
+    print(f"gate: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", "-C", str(cwd), *args], text=True, capture_output=True)
+
+
+def load_job(arg):
+    for p in sorted((FACTORY / "jobs").glob("*/job.json")):
+        job = json.loads(p.read_text())
+        if job["id"] == arg or job["id"].split("-")[0].lstrip("0") == arg.lstrip("0"):
+            return job
+    die(f"no job {arg}")
+
+
+def protected_changes(worktree, base, protected):
+    git(REPO, "fetch", "-q", "origin", base)
+    r = git(worktree, "diff", "--name-only", f"origin/{base}...HEAD")
+    if r.returncode != 0:
+        return [f"(could not diff against origin/{base}: {r.stderr.strip()})"]
+    hits = []
+    for path in r.stdout.split():
+        for rule in protected:
+            if path == rule or (rule.endswith("/") and path.startswith(rule)):
+                hits.append(path)
+                break
+    return hits
+
+
+def run_checks(worktree, port=None, timeout=1800):
+    """(exit code, combined output, seconds)."""
+    if not CHECKS.exists():
+        return 127, f"{CHECKS} doesn't exist", 0
+    env = dict(os.environ)
+    if port:
+        env["FACTORY_PORT"] = str(port)
+    start = time.time()
+    try:
+        p = subprocess.run(["bash", str(CHECKS)], cwd=worktree, env=env, text=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        code, out = p.returncode, p.stdout
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
+        code, out = 124, out + f"\n(timed out after {timeout}s)\n"
+    return code, out, round(time.time() - start)
+
+
+def tail(text, n=60):
+    lines = text.rstrip().splitlines()
+    return "\n".join(lines[-n:])
+
+
+def report(verdict, kind, n, code, secs, protected, log_name, log, untracked=(), touched=()):
+    bullets = []
+    if protected:
+        bullets.append(f"The branch changes protected paths: {', '.join(protected)}.")
+    bullets.append(f"factory/checks.sh exited {code} after {secs}s ({kind}, round {n}).")
+    if verdict == "PASS":
+        bullets.append("Every check passed; reviewers can start." if kind == "round gate"
+                       else "The synced branch still passes; it can merge.")
+    else:
+        bullets.append(f"Fix what fails below; the full output is in {log_name}.")
+    parts = [f"GATE: {verdict}", "", "## Summary", ""] + [f"- {b}" for b in bullets]
+    if protected:
+        parts += ["", "## Protected paths", "",
+                  "Branches may not change the factory's own files. Revert these:", ""]
+        parts += [f"- `{p}`" for p in protected]
+    if touched:
+        parts += ["", "## Files the checks changed", "",
+                  "Running factory/checks.sh modified these committed files. The gate put them",
+                  "back; checks should verify (e.g. `--check`), not rewrite.", ""]
+        parts += [f"- `{t}`" for t in touched[:50]]
+    if untracked:
+        parts += ["", "## Untracked files", "",
+                  "These exist in the worktree but aren't committed, so they aren't in the PR.",
+                  "Build output is fine; a source file here was probably meant to be committed.", ""]
+        parts += [f"- `{u}`" for u in untracked[:50]]
+    parts += ["", "## Log tail", "", "```text", tail(log) or "(no output)", "```", ""]
+    return "\n".join(parts)
+
+
+def gate(job_id, merge=False):
+    cfg = config()
+    job = load_job(job_id)
+    wt = Path(job["worktree"])
+    if not wt.exists():
+        die(f"{wt} doesn't exist")
+    n = job.get("round") or 1
+    out_dir = FACTORY / "jobs" / job["id"] / f"round-{n}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    name = "merge-checks" if merge else "checks"
+
+    status = git(wt, "status", "--porcelain").stdout.splitlines()
+    dirty = "\n".join(l for l in status if not l.startswith("??"))
+    untracked = [l[3:] for l in status if l.startswith("??")]
+    protected = protected_changes(wt, job.get("base", cfg["base_branch"]), cfg["protected_paths"])
+    if dirty:
+        code, log, secs = 1, f"The worktree has uncommitted changes; the gate tests commits only:\n{dirty}\n", 0
+    touched = []
+    if not dirty:
+        code, log, secs = run_checks(wt, job.get("port"), cfg["checks_timeout_sec"])
+        # The tree was clean before, so any tracked change now came from the checks.
+        touched = git(wt, "diff", "--name-only").stdout.split()
+        if touched:
+            git(wt, "checkout", "--", ".")
+        untracked = [l[3:] for l in git(wt, "status", "--porcelain").stdout.splitlines()
+                     if l.startswith("??")]
+    verdict = "PASS" if code == 0 and not protected and not dirty else "FAIL"
+    (out_dir / f"{name}.log").write_text(log)
+    (out_dir / f"{name}.md").write_text(
+        report(verdict, "merge gate" if merge else "round gate", n, code, secs, protected,
+               f"round-{n}/{name}.log", log, untracked, touched))
+    print(f"GATE: {verdict}")
+    sys.exit(0 if verdict == "PASS" else 1)
+
+
+def gate_main():
+    cfg = config()
+    base = cfg["base_branch"]
+    if git(REPO, "fetch", "-q", "origin", base).returncode != 0:
+        die(f"can't fetch origin/{base}")
+    tmp = Path(tempfile.mkdtemp(prefix="factory-main-"))
+    wt = tmp / "main"
+    r = git(REPO, "worktree", "add", "-q", "--detach", str(wt), f"origin/{base}")
+    if r.returncode != 0:
+        die(r.stderr.strip())
+    try:
+        code, log, secs = run_checks(wt, None, cfg["checks_timeout_sec"])
+    finally:
+        git(REPO, "worktree", "remove", "--force", str(wt))
+    print(tail(log, 30))
+    if UNSET in CHECKS.read_text():
+        code = code or 1
+    print(f"GATE: {'PASS' if code == 0 else 'FAIL'} (origin/{base}, {secs}s)")
+    sys.exit(0 if code == 0 else 1)
+
+
+def hook():
+    """The builder can't finish while checks fail. One nudge per stop."""
+    try:
+        event = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        sys.exit(0)
+    if event.get("stop_hook_active"):
+        sys.exit(0)
+    worktree = None
+    for key in ("agent_transcript_path", "transcript_path"):
+        path = event.get(key)
+        if not path or not Path(path).expanduser().exists():
+            continue
+        with open(Path(path).expanduser()) as f:
+            for _, line in zip(range(40), f):
+                m = re.search(r"Worktree: (\S+?)\.?(?:\s|\\n|\"|$)", line)
+                if m:
+                    worktree = m.group(1)
+                    break
+        if worktree:
+            break
+    if not worktree:
+        cwd = event.get("cwd", "")
+        if "/.worktrees/" in cwd:
+            worktree = cwd
+    if not worktree or not Path(worktree).exists():
+        sys.exit(0)
+    code, log, _ = run_checks(worktree, None, config()["checks_timeout_sec"])
+    if code != 0:
+        print("factory/checks.sh fails in your worktree (exit %d), so the gate will send this "
+              "build back. Fix it and commit, or write STATUS: BLOCKED in build.md and say "
+              "why.\n\n%s" % (code, tail(log, 40)), file=sys.stderr)
+        sys.exit(2)
+    sys.exit(0)
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+    if argv == ["--stop-hook"]:
+        hook()
+    elif argv == ["--main"]:
+        gate_main()
+    elif argv[0] == "--merge" and len(argv) == 2:
+        gate(argv[1], merge=True)
+    elif len(argv) == 1:
+        gate(argv[0])
+    else:
+        die("usage: gate <job> | gate --merge <job> | gate --main | gate --stop-hook")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

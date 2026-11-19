@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""factory/bin/route: which reviewers a job gets, and on which model.
+
+  route <job-id>                         read risk and surfaces from intake.md
+  route --risk <r> [--surfaces a,b]      try a combination without a job
+
+Prints JSON: {"risk": ..., "surfaces": [...], "reviewers": {"code": "haiku", ...}}.
+The rules live in factory/config.json under "reviewers". Each reviewer has
+`when`, a list of triggers (any one is enough):
+
+  always            every job
+  risk:<level>      intake rated the job at this risk (low, medium, high)
+  surface:<name>    intake flagged this surface (ui, security)
+
+and `model`, either one model or a map from risk level to model.
+This script only reads; factory/bin/board stores the result in job.json.
+"""
+
+import json
+import re
+import sys
+from pathlib import Path
+
+FACTORY = Path(__file__).resolve().parent.parent
+RISKS = ("low", "medium", "high")
+SURFACES = ("ui", "security")
+
+
+def die(msg):
+    print(f"route: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def from_intake(job_id):
+    path = FACTORY / "jobs" / job_id / "intake.md"
+    if not path.exists():
+        die(f"{path} doesn't exist")
+    risk, surfaces = "", ""
+    for line in path.read_text().splitlines()[:30]:
+        m = re.match(r"^\s*\**(risk|surfaces)\**\s*:\s*(.*)$", line, re.I)
+        if m:
+            if m.group(1).lower() == "risk":
+                risk = m.group(2)
+            else:
+                surfaces = m.group(2)
+    return risk, surfaces
+
+
+def plan(risk, surfaces):
+    risk = re.sub(r"[^a-z]", "", (risk or "").lower())
+    if risk not in RISKS:
+        # An unreadable rating gets the most scrutiny, not the least.
+        risk = "high"
+    found = [s for s in re.findall(r"[a-z]+", (surfaces or "").lower()) if s in SURFACES]
+    surfaces = sorted(set(found))
+
+    config = json.loads((FACTORY / "config.json").read_text())
+    reviewers = {}
+    for name, rule in config.get("reviewers", {}).items():
+        triggers = rule.get("when", ["always"])
+        hit = any(t == "always" or t == f"risk:{risk}" or t == f"surface:{s}"
+                  for t in triggers for s in (surfaces or [""]))
+        if not hit:
+            continue
+        model = rule.get("model", "sonnet")
+        if isinstance(model, dict):
+            model = model.get(risk) or model.get("default") or "sonnet"
+        reviewers[name] = model
+    if not reviewers:
+        die("config.json routes no reviewer for this job; add an `always` reviewer")
+    return {"risk": risk, "surfaces": surfaces, "reviewers": reviewers}
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+    if argv[0] == "--risk":
+        risk = argv[1] if len(argv) > 1 else ""
+        surfaces = argv[3] if len(argv) > 3 and argv[2] == "--surfaces" else ""
+    else:
+        risk, surfaces = from_intake(argv[0])
+    print(json.dumps(plan(risk, surfaces)))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
