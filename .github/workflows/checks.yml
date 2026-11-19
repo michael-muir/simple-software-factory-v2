@@ -1,0 +1,39 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer is valid shell
+        run: |
+          bash -n install.sh
+          shellcheck install.sh
+
+      - name: Installer works in a fresh repo
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          proj="$(mktemp -d)"
+          git -C "$proj" init -q
+          git -C "$proj" commit -q --allow-empty -m init
+          ./install.sh "$proj"
+          ./install.sh --upgrade "$proj"
+          test -f "$proj/.claude/skills/factory/SKILL.md"
+
+      - name: board.json is valid JSON
+        run: python3 -m json.tool factory/board.json > /dev/null
+
+      - name: Dashboard script parses
+        run: |
+          sed -n '/<script>/,/<\/script>/p' factory/dashboard.html | sed '1d;$d' > "$RUNNER_TEMP/dashboard.js"
+          node --check "$RUNNER_TEMP/dashboard.js"
