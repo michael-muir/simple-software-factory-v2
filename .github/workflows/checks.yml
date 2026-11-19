@@ -23,7 +23,7 @@ jobs:
         run: |
           python3 -m py_compile factory/bin/board factory/bin/gate factory/bin/route tests/*.py
           python3 -m pip install --quiet --user --break-system-packages vermin
-          python3 -m vermin -q --no-tips -t=3.9- --eval-annotations factory/bin/board factory/bin/gate factory/bin/route tests/*.py
+          "$(python3 -m site --user-base)/bin/vermin" -q --no-tips -t=3.9- --eval-annotations factory/bin/board factory/bin/gate factory/bin/route tests/*.py
 
       - name: JSON files are valid
         run: |
