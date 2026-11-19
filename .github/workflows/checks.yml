@@ -14,22 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-
       - name: Shell scripts are valid
         run: |
           bash -n install.sh factory/checks.sh
           shellcheck install.sh factory/checks.sh
 
-      - name: Python scripts compile
-        run: python -m py_compile factory/bin/board factory/bin/gate factory/bin/route tests/*.py
+      - name: Python scripts compile and stay 3.9-compatible
+        run: |
+          python3 -m py_compile factory/bin/board factory/bin/gate factory/bin/route tests/*.py
+          python3 -m pip install --quiet --user --break-system-packages vermin
+          python3 -m vermin -q --no-tips -t=3.9- --eval-annotations factory/bin/board factory/bin/gate factory/bin/route tests/*.py
 
       - name: JSON files are valid
         run: |
-          python -m json.tool factory/config.json > /dev/null
-          for f in examples/jobs/*/job.json; do python -m json.tool "$f" > /dev/null; done
+          python3 -m json.tool factory/config.json > /dev/null
+          for f in examples/jobs/*/job.json; do python3 -m json.tool "$f" > /dev/null; done
 
       - name: Agents have frontmatter
         run: |
@@ -43,7 +42,7 @@ jobs:
           git config --global user.email ci@example.com
           git config --global user.name ci
           git config --global init.defaultBranch main
-          python -m unittest discover -s tests -v
+          python3 -m unittest discover -s tests -v
 
       - name: Dashboard script parses
         run: |
