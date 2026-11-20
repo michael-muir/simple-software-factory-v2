@@ -14,24 +14,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer is valid shell
+      - name: Shell scripts are valid
         run: |
-          bash -n install.sh
-          shellcheck install.sh
+          bash -n install.sh factory/checks.sh
+          shellcheck install.sh factory/checks.sh
 
-      - name: Installer works in a fresh repo
+      - name: Python scripts compile and stay 3.9-compatible
+        run: |
+          python3 -m py_compile factory/bin/board factory/bin/gate factory/bin/route tests/*.py
+          python3 -m pip install --quiet --user --break-system-packages vermin
+          "$(python3 -m site --user-base)/bin/vermin" -q --no-tips -t=3.9- --eval-annotations factory/bin/board factory/bin/gate factory/bin/route tests/*.py
+
+      - name: JSON files are valid
+        run: |
+          python3 -m json.tool factory/config.json > /dev/null
+          for f in examples/jobs/*/job.json; do python3 -m json.tool "$f" > /dev/null; done
+
+      - name: Agents have frontmatter
+        run: |
+          for f in .claude/agents/*.md; do
+            head -1 "$f" | grep -qx -- '---' || { echo "$f has no frontmatter"; exit 1; }
+            grep -q "^name: $(basename "$f" .md)$" "$f" || { echo "$f name doesn't match"; exit 1; }
+          done
+
+      - name: End-to-end tests (installer, board, gate, route)
         run: |
           git config --global user.email ci@example.com
           git config --global user.name ci
-          proj="$(mktemp -d)"
-          git -C "$proj" init -q
-          git -C "$proj" commit -q --allow-empty -m init
-          ./install.sh "$proj"
-          ./install.sh --upgrade "$proj"
-          test -f "$proj/.claude/skills/factory/SKILL.md"
-
-      - name: board.json is valid JSON
-        run: python3 -m json.tool factory/board.json > /dev/null
+          git config --global init.defaultBranch main
+          python3 -m unittest discover -s tests -v
 
       - name: Dashboard script parses
         run: |

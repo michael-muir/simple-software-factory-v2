@@ -1,0 +1,36 @@
+{
+  "id": "004-make-it-faster",
+  "issue": 4,
+  "title": "Make it faster",
+  "stage": "needs-info",
+  "round": 0,
+  "max_round": 3,
+  "reworks": 0,
+  "syncs": 0,
+  "base": "main",
+  "branch": "factory/004-make-it-faster",
+  "worktree": "/home/you/code/tasks-cli/.worktrees/004-make-it-faster",
+  "created": "2026-11-19T22:36:15Z",
+  "port": 5140,
+  "issue_url": "https://github.com/acme/app/issues/4",
+  "author": "sam",
+  "updated": "2026-11-19T22:36:16Z",
+  "history": [
+    {
+      "at": "2026-11-19T22:36:15Z",
+      "event": "created"
+    },
+    {
+      "at": "2026-11-19T22:36:16Z",
+      "event": "intake \u2192 needs-info"
+    }
+  ],
+  "files": [
+    "issue.md",
+    "intake.md"
+  ],
+  "cost_usd": 0.09,
+  "asked_at": "2026-11-19T22:36:16Z",
+  "risk": "low",
+  "note": ""
+}
