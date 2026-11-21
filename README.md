@@ -1,4 +1,4 @@
-# simple-software-factory-v2
+# simple-software-factory
 
 A small, visual software factory for Claude Code that works through your
 GitHub issues. Label an issue `factory` and run `/factory run`: an intake
@@ -31,26 +31,13 @@ git clone https://github.com/michael-muir/simple-software-factory-v2.git
 ./simple-software-factory-v2/install.sh /path/to/your-project
 ```
 
-Then, in your project:
-
-1. Put your real checks in `factory/checks.sh` and run `factory/bin/gate --main`
-   until it prints `GATE: PASS`.
-2. In `factory/config.json`, set `base_branch` to your default branch,
-   `merge_method` to one your repo allows, and `concurrency` to `1` to start.
-3. Run `factory/bin/board init` to create the GitHub labels.
-4. Commit the install on your default branch and push it. Every job branches
-   from `origin/<base_branch>`, so the factory must be there first.
-
+Then fill in `factory/checks.sh`, run `factory/bin/gate --main` until it
+passes, run `factory/bin/board init` to create the labels, and commit and push.
 The installer refuses to overwrite existing files unless you pass `--force`;
-`--dry-run` shows what it would do. `factory/repo.md` (repo notes for the
-agents) is written on the first run if the install didn't write it.
+`--dry-run` shows what it would do.
 
-### Requirements
-
-- Claude Code 2.1.257 or later (the intake agent runs on Fable)
-- `git`, `bash` and `python3` 3.9 or later. On Windows, use Git Bash or WSL.
-- An authenticated [`gh`](https://cli.github.com/) that can push to the repo
-  and manage its labels
+You need Claude Code with subagents and hooks, `python3` (3.9+), and an
+authenticated [`gh`](https://cli.github.com/) that can push to the repo.
 
 ## First run
 
@@ -82,9 +69,10 @@ and `factory/jobs/` are never touched. It won't run while jobs are in
 progress unless you pass `--force`. The installed version is recorded in
 `.claude/skills/factory/.factory-version`.
 
-Coming from the older local-merge version? `factory/board.json` is now
-generated and gitignored (the installer tells you to `git rm --cached` it),
-and the factory now needs `gh` and a GitHub `origin`.
+Upgrading from the local-merge version: `factory/board.json` is now generated
+and gitignored (the installer tells you to `git rm --cached` it), the factory
+now needs `gh` and a GitHub `origin`, and new projects start from issues
+instead of `/factory <feature>`.
 
 ## How it works
 
