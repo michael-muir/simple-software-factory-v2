@@ -4,7 +4,7 @@
     {
       "name": "dashboard",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "factory"],
+      "runtimeArgs": ["factory/bin/board", "serve", "8000"],
       "port": 8000
     }
   ]

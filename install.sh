@@ -207,7 +207,7 @@ Next steps, in $TARGET:
   3. Review and commit the new files (.claude/, factory/, .gitignore), push.
   4. Label GitHub issues "factory" and run /factory run in Claude Code
      (or add lines to factory/backlog.md and run /factory next).
-  5. Watch it: cd factory && python3 -m http.server 8000, then open
+  5. Watch it: factory/bin/board serve, then open
      http://localhost:8000/dashboard.html
 EOF
 else

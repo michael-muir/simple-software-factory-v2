@@ -170,13 +170,14 @@ and required checks apply), and never deploys. Each job gets at most
 ## Dashboard
 
 ```sh
-cd factory
-python3 -m http.server 8000
+factory/bin/board serve        # or: factory/bin/board serve 8001
 # open http://localhost:8000/dashboard.html
 ```
 
 Each job is a card with its issue and PR links, risk, a row of chips per round
 (the gate, then each routed reviewer, then the merge gate), cost and time.
+Costs update while agents work, per job and in the factory total at the top.
+They count the job's agents, not the session that runs the factory.
 Jobs waiting on you or on an issue's author stand out. Click a card to read
 every file the job wrote, each one led by its summary, plus the job's history.
 

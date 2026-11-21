@@ -147,7 +147,7 @@ async function refresh() {
     text = await res.text();
   } catch (e) {
     if (last === null) notice("No <code>board.json</code> yet. Run <code>factory/bin/board index</code> " +
-      "(or start a job), and serve this folder: <code>python3 -m http.server</code>.");
+      "(or start a job), and serve the dashboard: <code>factory/bin/board serve</code>.");
     return;
   }
   if (text === last) return;   // unchanged: keep focus and hover state

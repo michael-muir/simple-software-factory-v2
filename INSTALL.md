@@ -111,7 +111,7 @@ Then report, briefly:
 - the config you chose;
 - how to start: label an issue `factory`, then run `/factory run` in Claude
   Code (or add lines to `factory/backlog.md` and run `/factory next`);
-- how to watch: `cd factory && python3 -m http.server 8000`, then open
+- how to watch: `factory/bin/board serve`, then open
   `http://localhost:8000/dashboard.html`;
 - that the intake agent runs on Fable once per issue, which on some plans
   bills to usage credits; they can change `model:` in

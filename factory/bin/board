@@ -15,6 +15,7 @@ whose precondition isn't met, is refused with a message saying why.
   board backlog [n]               file the first n backlog items as issues
   board sync <job>                re-read the job's files (verdicts, cost)
   board index                     rebuild board.json from every job.json
+  board serve [port]              serve the dashboard with live costs (default 8000)
   board summary [job ...]         one line per job: stage, rounds, cost, time
   board init                      check gh and the repo, create the labels
 
@@ -252,15 +253,55 @@ def natural(s):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s)]
 
 
-def rebuild_index():
-    jobs = all_jobs()
-    board = {
+def board_view():
+    """board.json's content, with every job's cost measured now."""
+    costs = measure_costs()
+    jobs = [apply_cost(j, costs) for j in all_jobs()]
+    return {
         "updated": now(),
         "concurrency": CFG["concurrency"],
         "max_rounds": CFG["max_rounds"],
+        "cost_usd": round(sum(j.get("cost_usd") or 0 for j in jobs), 2),
         "jobs": jobs,
     }
-    write_atomic(INDEX, json.dumps(board, indent=2) + "\n")
+
+
+def rebuild_index():
+    write_atomic(INDEX, json.dumps(board_view(), indent=2) + "\n")
+
+
+def cmd_serve(port):
+    """Serve the dashboard, measuring costs on every poll so they stay current.
+
+    Only reads: job.json files are still written by board commands alone.
+    Listens on 127.0.0.1 only.
+    """
+    import http.server
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(FACTORY), **kw)
+
+        def do_GET(self):
+            if self.path.split("?")[0] != "/board.json":
+                return super().do_GET()
+            body = json.dumps(board_view(), indent=2).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print(f"dashboard: http://localhost:{port}/dashboard.html  (Ctrl+C to stop)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 def running(jobs=None):
@@ -394,8 +435,15 @@ def transcripts_root():
     override = os.environ.get("FACTORY_TRANSCRIPTS")
     if override:
         return Path(override)
-    home = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
-    return home / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(REPO))
+    projects = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
+    name = re.sub(r"[^A-Za-z0-9]", "-", str(REPO))
+    if (projects / name).exists() or not projects.exists():
+        return projects / name
+    # Windows paths are case-insensitive, so the drive letter's case can differ.
+    for d in projects.iterdir():
+        if d.name.lower() == name.lower():
+            return d
+    return projects / name
 
 
 def text_of(entry):
@@ -430,48 +478,86 @@ def token_kinds(usage):
     }
 
 
-def measure_cost(job):
-    """API-equivalent cost of the subagents whose prompt names this job's folder.
+# `Job folder: <root>/factory/jobs/<id>/`, whichever way the path is spelled:
+# D:\x\factory\jobs\001-a\, D:/x/factory/jobs/001-a/ or /d/x/factory/jobs/001-a/.
+JOB_MARKER = re.compile(r"Job folder: [^\n]*?factory[\\/]+jobs[\\/]+([^\\/\s]+)[\\/]")
+_scan_cache = {}   # transcript path -> ((mtime, size), job id or None, {message id: (model, usage)})
+
+
+def scan_transcript(path):
+    """The job a subagent transcript belongs to, and its messages' usage."""
+    st = path.stat()
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _scan_cache.get(path)
+    if hit and hit[0] == key:
+        return hit[1], hit[2]
+    job_id, usage = None, {}
+    with path.open(encoding="utf-8", errors="replace") as f:
+        head = [next(f, "") for _ in range(5)]
+        for line in head:
+            if line.strip():
+                m = JOB_MARKER.search(text_of(json.loads(line)))
+                if m:
+                    job_id = m.group(1)
+                    break
+        if job_id:
+            for line in head + list(f):
+                if not line.strip():
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue   # the line Claude Code is still writing
+                msg = e.get("message")
+                if e.get("type") == "assistant" and isinstance(msg, dict) and msg.get("usage"):
+                    usage[msg.get("id") or id(e)] = (msg.get("model", ""), msg["usage"])
+    _scan_cache[path] = (key, job_id, usage)
+    return job_id, usage
+
+
+def measure_costs():
+    """API-equivalent cost of every job's subagents, as {job id: (dollars, unpriced models)}.
 
     Claude Code keeps each subagent's transcript as JSON lines under
     ~/.claude/projects/<project>/. The factory starts every prompt with
     `Job folder: <path>/`, which is how a transcript is tied to its job.
-    This reads an undocumented format, so it fails soft: unknown means None.
+    This reads an undocumented format, so it fails soft: a job with no
+    transcript found is left out.
     """
     root = transcripts_root()
     if not root.exists():
-        return job.get("cost_usd")
-    marker = "Job folder: %s/" % job_dir(job["id"])
-    seen = {}
-    unpriced = set()
+        return {}
+    per_job = {}
     for path in root.rglob("*.jsonl"):
         try:
-            with path.open(encoding="utf-8", errors="replace") as f:
-                head = [next(f, "") for _ in range(5)]
-                if not any(marker in text_of(json.loads(l)) for l in head if l.strip()):
-                    continue
-                for line in head + list(f):
-                    if not line.strip():
-                        continue
-                    e = json.loads(line)
-                    msg = e.get("message")
-                    if e.get("type") == "assistant" and isinstance(msg, dict) and msg.get("usage"):
-                        seen[msg.get("id") or id(e)] = (msg.get("model", ""), msg["usage"])
+            job_id, usage = scan_transcript(path)
         except (OSError, json.JSONDecodeError):
             continue
-    dollars = 0.0
-    for model, usage in seen.values():
-        rates = price_for(model)
-        if rates is None:
-            unpriced.add(model)
-            continue
-        dollars += sum(rates[kind] * count for kind, count in token_kinds(usage).items()) / 1e6
-    total = dollars
-    if unpriced:
-        job["cost_note"] = "no price for " + ", ".join(sorted(m for m in unpriced if m))
-    if not seen:
-        return job.get("cost_usd")
-    return round(total, 2)
+        if job_id:
+            per_job.setdefault(job_id, {}).update(usage)
+    out = {}
+    for job_id, seen in per_job.items():
+        dollars, unpriced = 0.0, set()
+        for model, usage in seen.values():
+            rates = price_for(model)
+            if rates is None:
+                unpriced.add(model)
+                continue
+            dollars += sum(rates[kind] * count for kind, count in token_kinds(usage).items()) / 1e6
+        out[job_id] = (round(dollars, 2), sorted(m for m in unpriced if m))
+    return out
+
+
+def apply_cost(job, costs):
+    if job["id"] in costs:
+        job["cost_usd"], unpriced = costs[job["id"]]
+        if unpriced:
+            job["cost_note"] = "no price for " + ", ".join(unpriced)
+    return job
+
+
+def measure_cost(job):
+    return apply_cost(job, measure_costs()).get("cost_usd")
 
 
 # --- reading the job's files -------------------------------------------------
@@ -1065,6 +1151,8 @@ def main(argv):
             job = refresh(resolve(args[0]))
             save(job)
             print(f"{job['id']}: {job['stage']}")
+        elif cmd == "serve":
+            cmd_serve(int(args[0]) if args else 8000)
         elif cmd == "index":
             rebuild_index()
             print(f"board.json: {len(all_jobs())} jobs")
