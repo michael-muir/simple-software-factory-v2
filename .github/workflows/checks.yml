@@ -31,6 +31,11 @@ jobs:
 
       - name: Agents have frontmatter
         run: |
+          python3 -m pip install --quiet --user --break-system-packages pyyaml
+          for f in .claude/agents/*.md; do
+            python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding="utf-8").read().split("---\n")[1])' "$f" \
+              || { echo "$f frontmatter isn't valid YAML (Claude Code skips the agent)"; exit 1; }
+          done
           for f in .claude/agents/*.md; do
             head -1 "$f" | grep -qx -- '---' || { echo "$f has no frontmatter"; exit 1; }
             grep -q "^name: $(basename "$f" .md)$" "$f" || { echo "$f name doesn't match"; exit 1; }

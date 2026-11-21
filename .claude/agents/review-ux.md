@@ -1,6 +1,6 @@
 ---
 name: review-ux
-description: Reviews a factory branch for user experience: flows, error messages, naming, docs. Routed when intake flags the ui surface.
+description: Reviews a factory branch for user experience (flows, error messages, naming, docs). Routed when intake flags the ui surface.
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
 ---

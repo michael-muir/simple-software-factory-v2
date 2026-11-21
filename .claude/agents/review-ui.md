@@ -1,6 +1,6 @@
 ---
 name: review-ui
-description: Reviews a factory branch for visual and interface design: layout, consistency, accessibility. Routed when intake flags the ui surface.
+description: Reviews a factory branch for visual and interface design (layout, consistency, accessibility). Routed when intake flags the ui surface.
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
 ---
