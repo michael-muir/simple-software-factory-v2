@@ -36,7 +36,8 @@ Then, in your project:
 1. Put your real checks in `factory/checks.sh` and run `factory/bin/gate --main`
    until it prints `GATE: PASS`.
 2. In `factory/config.json`, set `base_branch` to your default branch,
-   `merge_method` to one your repo allows, and `concurrency` to `1` to start.
+   and `merge_method` to one your repo allows. `concurrency` (how many jobs
+   run at once) is 3 unless you change it.
 3. Run `factory/bin/board init` to create the GitHub labels.
 4. Commit the install on your default branch and push it. Every job branches
    from `origin/<base_branch>`, so the factory must be there first.
@@ -187,8 +188,9 @@ cost shows as unknown and everything else carries on.
 
 ## Cost and safety notes
 
-- It opens and merges real PRs on your Claude plan. Begin with
-  `"concurrency": 1` and review each PR yourself until it has earned your trust.
+- It opens and merges real PRs on your Claude plan, up to 3 jobs at once by
+  default. To start carefully, set `"concurrency": 1` and review each PR
+  yourself until it has earned your trust.
 - Intake runs on Fable once per issue (and again after an author's reply).
   Depending on your plan, Fable can bill to usage credits; set `model: opus`
   in `.claude/agents/intake.md` if you prefer.

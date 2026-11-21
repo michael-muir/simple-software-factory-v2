@@ -62,7 +62,7 @@ project's real commands:
 Open `factory/config.json` and set:
 
 - `base_branch` to the default branch from step 1.
-- `concurrency`: start at `1` unless the person asked for more.
+- `concurrency`: leave it at `3` unless the person asked for another number.
 - `merge_method`: `merge`, `squash` or `rebase`, matching what the repo allows
   (`gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`).
 - `protected_paths`: keep `factory/` and `.claude/`. Add anything else no
