@@ -178,7 +178,6 @@ Each job is a card with its issue and PR links, risk, a row of chips per round
 (the gate, then each routed reviewer, then the merge gate), cost and time.
 Jobs waiting on you or on an issue's author stand out. Click a card to read
 every file the job wrote, each one led by its summary, plus the job's history.
-To try it without running anything, see [examples/](examples/).
 
 Cost is the API-equivalent price of each job's agents, read from Claude
 Code's transcripts and priced with `prices_usd_per_mtok` in `config.json`. On
@@ -213,10 +212,7 @@ factory/board.json                generated index for the dashboard (gitignored)
 factory/jobs/<id>/                job.json, issue.md, intake.md, spec.md, build.md,
                                   rework-K.md, round-N/, decision.md (gitignored)
 .worktrees/<id>/                  a job's code, on factory/<id> (gitignored)
-examples/jobs/                    sample jobs for the dashboard (this repo only)
-tests/                            end-to-end tests for the scripts (this repo only)
 ```
 
 To change the factory, edit `SKILL.md` (the loop), the agent files (the
 workers), `config.json` (routing and limits), or the scripts (the rules).
-Run the tests with `python3 -m unittest discover -s tests -v`.
