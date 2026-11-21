@@ -171,13 +171,33 @@ and required checks apply), and never deploys. Each job gets at most
 
 ![The dashboard with jobs in review, approval and done, each showing its rounds of gate and review chips and its cost](docs/dashboard.png)
 
+To launch the dashboard, run `board serve` from your project's root (not from
+inside `factory/`), then open http://localhost:8000/dashboard.html.
 
-To launch the Dashboard:
+**Git Bash (Windows), macOS or Linux:**
+
+```sh
+factory/bin/board serve
+```
+
+**PowerShell or Command Prompt (Windows):**
+
+```powershell
+python factory/bin/board serve
+```
+
+PowerShell can't run `factory/bin/board` by itself (Windows asks which app to
+open it with), so start it through `python`. Stop it with Ctrl+C. If port
+8000 is taken, add another port, e.g. `factory/bin/board serve 8001`, and open
+that port instead.
+
+If `board serve` won't start, you can serve the folder as plain files. The
+board still shows, but costs only update when a job changes stage, and there
+are no Approve, Rework or Reject buttons:
 
 ```sh
 cd factory
 python -m http.server 8000     # python3 on macOS and Linux
-# open http://localhost:8000/dashboard.html
 ```
 
 Each job is a card with its issue and PR links, risk, a row of chips per round
