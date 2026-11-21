@@ -171,16 +171,12 @@ and required checks apply), and never deploys. Each job gets at most
 
 ![The dashboard with jobs in review, approval and done, each showing its rounds of gate and review chips and its cost](docs/dashboard.png)
 
-```sh
-factory/bin/board serve        # or: factory/bin/board serve 8001
-# open http://localhost:8000/dashboard.html
-```
 
-Or serve the folder as plain files. This works everywhere, but costs only
-update when a job moves to its next stage:
+To launch the Dashboard:
 
 ```sh
-cd factory && python -m http.server 8000     # python3 on macOS and Linux
+cd factory
+python -m http.server 8000     # python3 on macOS and Linux
 # open http://localhost:8000/dashboard.html
 ```
 
