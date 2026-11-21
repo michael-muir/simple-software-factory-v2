@@ -327,17 +327,26 @@ const ACTION_TEXT = {
              placeholder: "Answer each of intake's questions. To reread them, Cancel and open intake.md." },
   reject:  { label: "Reject", send: "Reject the job",
              title: () => "Reject this job",
-             help: "Say why. This is posted on the issue, and the PR is closed.",
+             help: job => (job.stage in AGENT_AT_WORK && !job.waiting_for
+                           ? `${AGENT_AT_WORK[job.stage]} on this job; it will be stopped. ` : "") +
+                   "Say why. Your reason is posted on the issue, the `factory` label comes off " +
+                   "and the PR is closed (its branch is kept). The issue stays open: label it " +
+                   "`factory` again to run it again.",
              placeholder: "e.g. Out of scope: we're replacing the board next month" },
 };
 const WORKING = { approve: "Merging: syncing with main and running the checks…",
                   rework: "Sending it back to the builder…", reject: "Rejecting…",
                   answer: "Posting your answer…" };
 
+const AGENT_AT_WORK = { intake: "Intake is reading the issue", spec: "The spec writer is working",
+  build: "A builder is working", gate: "The checks are running", review: "Reviewers are working",
+  approval: "The approver is deciding" };
+
 function offered(job) {
   if (job.stage === "needs-human") return job.pr ? ["approve", "rework", "reject"] : ["rework", "reject"];
   if (job.stage === "needs-info") return ["answer", "reject"];
-  return [];
+  if (job.stage in AGENT_AT_WORK) return ["reject"];
+  return [];   // merging, merged or rejected
 }
 
 function fillActions(job) {
@@ -346,7 +355,7 @@ function fillActions(job) {
   const list = offered(job);
   if (!token || (!list.length && !st)) { bar.hidden = true; return; }
   bar.hidden = false;
-  let why = esc(job.note || ""), cls = "";
+  let why = esc(job.note || (AGENT_AT_WORK[job.stage] ? `${AGENT_AT_WORK[job.stage]}.` : "")), cls = "";
   if (st && st.state === "working") { why = esc(WORKING[st.action]); cls = "working"; }
   else if (st && st.state === "failed") { why = `${esc(ACTION_TEXT[st.action].label)} failed: ${esc(st.message)}`; cls = "failed"; }
   else if (st && st.state === "done" && !list.length) { why = esc(st.message); cls = "done"; }
@@ -361,7 +370,7 @@ function ask(job, action) {
   const t = ACTION_TEXT[action];
   const text = document.getElementById("ask-text");
   document.getElementById("ask-title").textContent = t.title(job);
-  document.getElementById("ask-help").textContent = t.help;
+  document.getElementById("ask-help").textContent = typeof t.help === "function" ? t.help(job) : t.help;
   document.getElementById("ask-err").textContent = "";
   const send = document.getElementById("ask-send");
   send.textContent = t.send;

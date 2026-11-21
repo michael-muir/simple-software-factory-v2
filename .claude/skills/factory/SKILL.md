@@ -108,8 +108,8 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
   `factory/bin/board merge <id>`. (Merging the PR on GitHub does the same.)
 - `/factory rework <id> [note]`: send a `needs-human` job back to the builder
   (see **Rework**).
-- `/factory reject <id> <reason>`: drop a job that waits on a human or its
-  author (see **Talking to the factory**).
+- `/factory reject <id> <reason>`: drop a job at any stage except merge
+  (see **Talking to the factory**).
 - `/factory <anything else>`: see **Talking to the factory**.
 
 ## Step 0: the repo (once per session, before any job)
@@ -136,8 +136,10 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
      `factory/bin/board create <issue>` prints the job id; go to **Intake**.
    - `hold`: no free slot yet. `wait`: needs the author or the user, or
      waits for a job that touches the same files.
-     `skip`: finished before. `done`: its PR was merged by hand: stop any of
-     its agents still running.
+     `skip`: merged before. `done`: its PR was merged by hand: stop any of
+     its agents still running. `stop`: rejected while it was running: stop
+     its agents, then `factory/bin/board cleanup <id>`. A `new` line can be an
+     issue labeled again after a reject; `create` starts a fresh job for it.
 
    The script enforces `concurrency`; start exactly the `resume` and `new`
    lines. Don't judge issues yourself: intake decides.
@@ -149,8 +151,9 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
    with the Bash tool in the background. It exits when someone presses
    Approve, Rework, Reject or Answer on the dashboard (`board serve` has already run
    the command) and prints one line per action. When it exits: stop any agents
-   still running for a rejected job, run `factory/bin/board queue` and act on
-   it as in step 2, then start `board wait` again. Leave it running when the
+   still running for a rejected job, then run `factory/bin/board cleanup <id>`
+   for it; run `factory/bin/board queue` and act on it as in step 2, then
+   start `board wait` again. Leave it running when the
    run ends, so a later press still wakes you.
 4. When nothing is running or queued, print `factory/bin/board summary <ids>`
    covering the jobs this run moved. Then say what is waiting on people: PRs
@@ -294,7 +297,7 @@ a new feature, ask.
 
   It posts the answer on the issue and moves the job back to intake (or, with
   no free slot, leaves it for the queue). If it moved, go to **Intake**.
-- **Reject / drop / bench a job** waiting on a human or its author:
+- **Reject / drop / bench a job** at any stage except merge:
 
   ```bash
   factory/bin/board reject <id> <<'EOF'
@@ -303,8 +306,10 @@ a new feature, ask.
   ```
 
   The script writes `rejection.md`, comments the reason on the issue, takes
-  off every factory label, and closes the job's PR if there is one. To bring it back later, delete
-  `factory/jobs/<id>` and label the issue `factory` again.
+  off every factory label, and closes the job's PR if there is one (its
+  branch is kept). If the job was running, it says so: stop its agents, then
+  `factory/bin/board cleanup <id>`. To bring it back later, label the issue
+  `factory` again: the queue starts a fresh job for it.
 - **A new feature**: file it and run it:
 
   ```bash
@@ -333,3 +338,7 @@ a new feature, ask.
   bullets): `DECISION:` (intake), `STATUS:` (builder), `VERDICT:` (reviewers),
   `APPROVE`/`ESCALATE` (approver); the gate writes `GATE:`.
 - One PR per issue, at most `max_rounds` rounds per budget.
+- **A job can be rejected while its agents run** (from the dashboard or
+  `/factory reject`). When an agent returns for a job that `board` reports as
+  `rejected`, don't advance it or spawn anything more: stop its other agents
+  and run `factory/bin/board cleanup <id>`.

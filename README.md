@@ -172,8 +172,10 @@ and required checks apply), and never deploys. Each job gets at most
 - `/factory rework <id> [note]`: send a `needs-human` job back to a fresh
   builder with your note (or, with none, to fix why it stopped), with a fresh
   round budget.
-- `/factory reject <id> <reason>`: drop a job waiting on you or its author;
-  the reason goes on the issue and the PR closes.
+- `/factory reject <id> <reason>`: drop a job at any stage except while it's
+  merging. The reason goes on the issue, the `factory` label comes off, the PR
+  closes (its branch is kept), and the issue stays open. Label it `factory`
+  again to run it again as a new job.
 - `/factory <anything else>`: ask about jobs or costs, answer an intake
   question, or describe a new feature (it becomes an issue).
 
@@ -221,7 +223,8 @@ With `board serve`, a job waiting on you has **Approve**, **Rework** and
 **Reject** buttons at the top of its card's popup. They do the same as
 `/factory approve`, `rework` and `reject`. A job waiting on its issue's author
 has **Answer** and **Reject**: Answer posts your reply on the issue as a comment
-from you, and intake runs again with it. A running `/factory run` session picks up a rework right away;
+from you, and intake runs again with it. Every other job has **Reject** too,
+except while it's merging; if an agent is working on it, the factory stops it. A running `/factory run` session picks up a rework right away;
 otherwise the next `/factory run` does. The buttons only work from the page
 `board serve` gives you, on your own machine.
 
