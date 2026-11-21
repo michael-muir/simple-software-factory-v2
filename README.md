@@ -174,6 +174,14 @@ factory/bin/board serve        # or: factory/bin/board serve 8001
 # open http://localhost:8000/dashboard.html
 ```
 
+Or serve the folder as plain files. This works everywhere, but costs only
+update when a job moves to its next stage:
+
+```sh
+cd factory && python -m http.server 8000     # python3 on macOS and Linux
+# open http://localhost:8000/dashboard.html
+```
+
 Each job is a card with its issue and PR links, risk, a row of chips per round
 (the gate, then each routed reviewer, then the merge gate), cost and time.
 Costs update while agents work, per job and in the factory total at the top.
