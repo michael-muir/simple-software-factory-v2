@@ -169,6 +169,8 @@ and required checks apply), and never deploys. Each job gets at most
 
 ## Dashboard
 
+![The dashboard with jobs in review, approval and done, each showing its rounds of gate and review chips and its cost](docs/dashboard.png)
+
 ```sh
 factory/bin/board serve        # or: factory/bin/board serve 8001
 # open http://localhost:8000/dashboard.html
