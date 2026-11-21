@@ -33,6 +33,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Read and write UTF-8 whatever the platform default is (Windows uses cp1252).
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).resolve().parent
 FACTORY = HERE.parent
 REPO = FACTORY.parent
@@ -78,7 +83,7 @@ def load_config():
     cfg = json.loads(json.dumps(DEFAULTS))
     path = FACTORY / "config.json"
     if path.exists():
-        cfg.update(json.loads(path.read_text()))
+        cfg.update(json.loads(path.read_text(encoding="utf-8")))
     return cfg
 
 
@@ -94,7 +99,8 @@ def parse_time(s):
 
 
 def run(cmd, cwd=REPO, check=True, stdin=None):
-    p = subprocess.run(cmd, cwd=cwd, input=stdin, text=True, capture_output=True)
+    p = subprocess.run(cmd, cwd=cwd, input=stdin, text=True,
+                       encoding="utf-8", errors="replace", capture_output=True)
     if check and p.returncode != 0:
         raise Refused(f"`{' '.join(cmd)}` failed: {(p.stderr or p.stdout).strip()}")
     return p
@@ -124,14 +130,14 @@ def operator():
 def write_atomic(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(tmp, path)
 
 
 def first_line(path):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 if line.strip():
                     return line.strip()
@@ -143,7 +149,7 @@ def first_line(path):
 def section(path, title):
     """The body of a `## <title>` section, or ''."""
     try:
-        text = Path(path).read_text()
+        text = Path(path).read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
     m = re.search(rf"^##\s+{re.escape(title)}\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S | re.I)
@@ -153,7 +159,7 @@ def section(path, title):
 def field(path, name):
     """A `Name: value` line near the top of an agent's file."""
     try:
-        for line in Path(path).read_text().splitlines()[:30]:
+        for line in Path(path).read_text(encoding="utf-8").splitlines()[:30]:
             m = re.match(rf"^\s*\**{re.escape(name)}\**\s*:\s*(.+)$", line, re.I)
             if m:
                 return m.group(1).strip().strip("*` ")
@@ -181,7 +187,7 @@ def load(job_id):
     path = job_dir(job_id) / "job.json"
     if not path.exists():
         raise Refused(f"no job {job_id}")
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def all_jobs():
@@ -190,7 +196,7 @@ def all_jobs():
     out = []
     for p in sorted(JOBS.glob("*/job.json")):
         try:
-            out.append(json.loads(p.read_text()))
+            out.append(json.loads(p.read_text(encoding="utf-8")))
         except json.JSONDecodeError:
             continue
     return out
@@ -440,7 +446,7 @@ def measure_cost(job):
     unpriced = set()
     for path in root.rglob("*.jsonl"):
         try:
-            with path.open() as f:
+            with path.open(encoding="utf-8", errors="replace") as f:
                 head = [next(f, "") for _ in range(5)]
                 if not any(marker in text_of(json.loads(l)) for l in head if l.strip()):
                     continue
@@ -605,7 +611,7 @@ def advance(job, to, why=""):
     elif to == "build":
         if frm == "spec":
             spec = d / "spec.md"
-            if not spec.exists() or "acceptance criteria" not in spec.read_text().lower():
+            if not spec.exists() or "acceptance criteria" not in spec.read_text(encoding="utf-8").lower():
                 raise Refused("spec.md is missing or has no Acceptance criteria")
             job["max_round"] = CFG["max_rounds"]
             start_round(job)
@@ -655,7 +661,7 @@ def advance(job, to, why=""):
         job["note"] = reason
         if job.get("pr"):
             gh("pr", "ready", str(job["pr"]), check=False)
-            decision = (d / "decision.md").read_text() if (d / "decision.md").exists() else ""
+            decision = (d / "decision.md").read_text(encoding="utf-8") if (d / "decision.md").exists() else ""
             body = f"**The factory needs a human.** {reason}"
             if decision and verdict(d / "decision.md", "") in ("ESCALATE", "INVALID"):
                 body += "\n\n" + decision.strip()
@@ -837,7 +843,7 @@ def mark_backlog(job):
     path = FACTORY / "backlog.md"
     if not path.exists():
         return
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     new = re.sub(rf"^- \[[ ~]\] (.*?→ #{job['issue']})\s*$", r"- [x] \1", text, flags=re.M)
     if new != text:
         write_atomic(path, new)
@@ -958,7 +964,7 @@ def cmd_backlog(count):
         raise Refused("factory/backlog.md doesn't exist")
     filed = []
     for _ in range(count):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         m = re.search(r"^- \[ \] (.+?)\s*$", text, re.M)
         if not m:
             break
@@ -969,7 +975,7 @@ def cmd_backlog(count):
         url = gh("issue", "create", "--title", item[:120], "--label", labels()["queue"],
                  "--body-file", "-", stdin=body)
         num = re.search(r"/issues/(\d+)", url).group(1)
-        text = path.read_text().replace(claimed, f"- [~] {item} → #{num}", 1)
+        text = path.read_text(encoding="utf-8").replace(claimed, f"- [~] {item} → #{num}", 1)
         write_atomic(path, text)
         filed.append(num)
     if not filed:
@@ -1026,7 +1032,7 @@ def cmd_init():
                  "--description", about.get(key, ""), "--force"], check=False)
         print(f"label {name}: {'ok' if r.returncode == 0 else 'FAILED ' + r.stderr.strip()}")
     checks = FACTORY / "checks.sh"
-    if not checks.exists() or "FACTORY-CHECKS-NOT-CONFIGURED" in checks.read_text():
+    if not checks.exists() or "FACTORY-CHECKS-NOT-CONFIGURED" in checks.read_text(encoding="utf-8"):
         problems.append("factory/checks.sh isn't set up yet (see INSTALL.md)")
     rebuild_index()
     for p in problems:

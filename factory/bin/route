@@ -21,6 +21,11 @@ import re
 import sys
 from pathlib import Path
 
+# Read and write UTF-8 whatever the platform default is (Windows uses cp1252).
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 FACTORY = Path(__file__).resolve().parent.parent
 RISKS = ("low", "medium", "high")
 SURFACES = ("ui", "security")
@@ -36,7 +41,7 @@ def from_intake(job_id):
     if not path.exists():
         die(f"{path} doesn't exist")
     risk, surfaces = "", ""
-    for line in path.read_text().splitlines()[:30]:
+    for line in path.read_text(encoding="utf-8").splitlines()[:30]:
         m = re.match(r"^\s*\**(risk|surfaces)\**\s*:\s*(.*)$", line, re.I)
         if m:
             if m.group(1).lower() == "risk":
@@ -54,7 +59,7 @@ def plan(risk, surfaces):
     found = [s for s in re.findall(r"[a-z]+", (surfaces or "").lower()) if s in SURFACES]
     surfaces = sorted(set(found))
 
-    config = json.loads((FACTORY / "config.json").read_text())
+    config = json.loads((FACTORY / "config.json").read_text(encoding="utf-8"))
     reviewers = {}
     for name, rule in config.get("reviewers", {}).items():
         triggers = rule.get("when", ["always"])

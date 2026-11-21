@@ -25,6 +25,11 @@ import tempfile
 import time
 from pathlib import Path
 
+# Read and write UTF-8 whatever the platform default is (Windows uses cp1252).
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 FACTORY = Path(__file__).resolve().parent.parent
 REPO = FACTORY.parent
 CHECKS = FACTORY / "checks.sh"
@@ -33,7 +38,7 @@ UNSET = "FACTORY-CHECKS-NOT-CONFIGURED"
 
 def config():
     path = FACTORY / "config.json"
-    cfg = json.loads(path.read_text()) if path.exists() else {}
+    cfg = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     cfg.setdefault("base_branch", "main")
     cfg.setdefault("protected_paths", ["factory/", ".claude/"])
     cfg.setdefault("checks_timeout_sec", 1800)
@@ -46,12 +51,13 @@ def die(msg):
 
 
 def git(cwd, *args):
-    return subprocess.run(["git", "-C", str(cwd), *args], text=True, capture_output=True)
+    return subprocess.run(["git", "-C", str(cwd), *args], text=True, encoding="utf-8",
+                          errors="replace", capture_output=True)
 
 
 def load_job(arg):
     for p in sorted((FACTORY / "jobs").glob("*/job.json")):
-        job = json.loads(p.read_text())
+        job = json.loads(p.read_text(encoding="utf-8"))
         if job["id"] == arg or job["id"].split("-")[0].lstrip("0") == arg.lstrip("0"):
             return job
     die(f"no job {arg}")
@@ -81,6 +87,7 @@ def run_checks(worktree, port=None, timeout=1800):
     start = time.time()
     try:
         p = subprocess.run(["bash", str(CHECKS)], cwd=worktree, env=env, text=True,
+                           encoding="utf-8", errors="replace",
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
         code, out = p.returncode, p.stdout
     except subprocess.TimeoutExpired as e:
@@ -150,10 +157,10 @@ def gate(job_id, merge=False):
         untracked = [l[3:] for l in git(wt, "status", "--porcelain").stdout.splitlines()
                      if l.startswith("??")]
     verdict = "PASS" if code == 0 and not protected and not dirty else "FAIL"
-    (out_dir / f"{name}.log").write_text(log)
+    (out_dir / f"{name}.log").write_text(log, encoding="utf-8")
     (out_dir / f"{name}.md").write_text(
         report(verdict, "merge gate" if merge else "round gate", n, code, secs, protected,
-               f"round-{n}/{name}.log", log, untracked, touched))
+               f"round-{n}/{name}.log", log, untracked, touched), encoding="utf-8")
     print(f"GATE: {verdict}")
     sys.exit(0 if verdict == "PASS" else 1)
 
@@ -173,7 +180,7 @@ def gate_main():
     finally:
         git(REPO, "worktree", "remove", "--force", str(wt))
     print(tail(log, 30))
-    if UNSET in CHECKS.read_text():
+    if UNSET in CHECKS.read_text(encoding="utf-8"):
         code = code or 1
     print(f"GATE: {'PASS' if code == 0 else 'FAIL'} (origin/{base}, {secs}s)")
     sys.exit(0 if code == 0 else 1)
@@ -192,7 +199,7 @@ def hook():
         path = event.get(key)
         if not path or not Path(path).expanduser().exists():
             continue
-        with open(Path(path).expanduser()) as f:
+        with open(Path(path).expanduser(), encoding="utf-8", errors="replace") as f:
             for _, line in zip(range(40), f):
                 m = re.search(r"Worktree: (\S+?)\.?(?:\s|\\n|\"|$)", line)
                 if m:
