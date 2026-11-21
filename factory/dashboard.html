@@ -75,6 +75,7 @@
                        font-size: 18px; cursor: pointer; }
   .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
            gap: 6px 14px; padding: 10px 18px; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .facts div.wide { grid-column: 1 / -1; white-space: pre-wrap; line-height: 1.55; }
   .facts div span { display: block; color: var(--dim); font-size: 10px;
                     text-transform: uppercase; letter-spacing: .08em; }
   .tabs { display: flex; gap: 6px; padding: 10px 18px 0; flex-wrap: wrap; }
@@ -301,9 +302,9 @@ function fillFacts(job) {
     ["cost (API-equivalent)", money(job.cost_usd)],
     ["time", duration(job)],
   ];
-  if (job.note) facts.push(["note", esc(job.note)]);
+  if (job.note) facts.push(["note", esc(job.note), "wide"]);
   document.getElementById("facts").innerHTML =
-    facts.map(([k, v]) => `<div><span>${k}</span>${v}</div>`).join("");
+    facts.map(([k, v, cls]) => `<div${cls ? ` class="${cls}"` : ""}><span>${k}</span>${v}</div>`).join("");
   document.getElementById("history").innerHTML = (job.history || []).slice().reverse()
     .map(h => `${esc(h.at)}  ${esc(h.event)}`).join("<br>");
 }
