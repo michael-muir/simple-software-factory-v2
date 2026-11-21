@@ -1,0 +1,4 @@
+.worktrees/
+factory/jobs/
+factory/board.json
+__pycache__/
