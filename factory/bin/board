@@ -554,7 +554,7 @@ def advance(job, to, why=""):
         v = verdict(d / "intake.md", "DECISION")
         if v != "ACCEPT":
             raise Refused(f"intake.md says {v or 'nothing'}, not DECISION: ACCEPT")
-        plan = json.loads(run([str(HERE / "route"), job["id"]]).stdout)
+        plan = json.loads(run([sys.executable, str(HERE / "route"), job["id"]]).stdout)
         job["risk"], job["surfaces"] = plan["risk"], plan["surfaces"]
         job["agents"] = {"reviewers": plan["reviewers"]}
         comment = section(d / "intake.md", "Comment") or "Accepted. Writing a spec."
@@ -880,7 +880,7 @@ def cmd_merge(job):
                 print(f"MERGE: SYNC: builder must merge origin/{job['base']} (round {job['round']})")
                 sys.exit(3)
             stop(f"the branch conflicts with origin/{job['base']} again after a sync")
-        g = run([str(HERE / "gate"), "--merge", job["id"]], check=False)
+        g = run([sys.executable, str(HERE / "gate"), "--merge", job["id"]], check=False)
         refresh(job)
         save(job)
         if g.returncode != 0:
