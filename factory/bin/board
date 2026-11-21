@@ -365,8 +365,8 @@ def cmd_serve(port):
                 return self.reply(409, {"error": f"{job_id} is in {job['stage']}"})
             if action == "approve" and not job.get("pr"):
                 return self.reply(409, {"error": f"{job_id} has no PR to merge"})
-            if action != "approve" and not text:
-                return self.reply(400, {"error": "write a note first"})
+            if action == "reject" and not text:
+                return self.reply(400, {"error": "write a reason first"})
             with lock:
                 if (status.get(job_id) or {}).get("state") == "working":
                     return self.reply(409, {"error": f"{job_id} is already being handled"})
@@ -1113,11 +1113,16 @@ def read_stdin(what):
 def cmd_rework(job):
     if job["stage"] != "needs-human":
         raise Refused(f"{job['id']} is in {job['stage']}; only needs-human jobs take a rework")
-    note = read_stdin("rework note")
+    note = sys.stdin.read().strip()
     require_slot(exclude=job["id"])
     k = job.get("reworks", 0) + 1
-    write_atomic(job_dir(job["id"]) / f"rework-{k}.md",
-                 f"# Rework {k}\n\nFrom the operator, verbatim:\n\n{quote(note)}\n")
+    if note:
+        body = f"From the operator, verbatim:\n\n{quote(note)}\n"
+    else:
+        body = ("The operator sent this back without a note. Fix why the job stopped:\n\n"
+                f"{quote(job.get('note') or 'no reason recorded')}\n\n"
+                "Read the latest round's reviews and decision.md (if any) for the details.\n")
+    write_atomic(job_dir(job["id"]) / f"rework-{k}.md", f"# Rework {k}\n\n{body}")
     ensure_worktree(job)
     job["reworks"] = k
     job["stage"] = "build"

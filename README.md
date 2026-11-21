@@ -160,8 +160,9 @@ and required checks apply), and never deploys. Each job gets at most
   `factory/backlog.md` as `factory` issues and run them.
 - `/factory approve <id>`: merge a `needs-human` job's PR. (Merging it on
   GitHub does the same; the factory notices.)
-- `/factory rework <id> <note>`: send a `needs-human` job back to a fresh
-  builder with your note, with a fresh round budget.
+- `/factory rework <id> [note]`: send a `needs-human` job back to a fresh
+  builder with your note (or, with none, to fix why it stopped), with a fresh
+  round budget.
 - `/factory reject <id> <reason>`: drop a job waiting on you or its author;
   the reason goes on the issue and the PR closes.
 - `/factory <anything else>`: ask about jobs or costs, answer an intake

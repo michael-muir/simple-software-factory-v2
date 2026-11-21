@@ -106,7 +106,7 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
   (it prints the issue numbers), then `/factory run <issue>` for each.
 - `/factory approve <id>`: merge a `needs-human` job's PR yourself, with
   `factory/bin/board merge <id>`. (Merging the PR on GitHub does the same.)
-- `/factory rework <id> <note>`: send a `needs-human` job back to the builder
+- `/factory rework <id> [note]`: send a `needs-human` job back to the builder
   (see **Rework**).
 - `/factory reject <id> <reason>`: drop a job that waits on a human or its
   author (see **Talking to the factory**).
@@ -252,8 +252,9 @@ reason from `build.md`, or what failed). A slot is free: run the queue.
 
 ## Rework
 
-`/factory rework <id> <note>` (job in `needs-human`). Pass the note verbatim
-on stdin:
+`/factory rework <id> [note]` (job in `needs-human`). Pass the note verbatim
+on stdin. With no note, pass nothing: the builder is told to fix why the job
+stopped.
 
 ```bash
 factory/bin/board rework <id> <<'EOF'
