@@ -86,6 +86,13 @@ Agents reply with one line; you're notified when one finishes and you advance
 that job then. While agents run, don't poll: end your turn with a one-line
 status. One job's events never touch another job's files, worktree or builder.
 
+**An agent that returns without writing its file** (or whose file has no
+valid first line) gets one retry: resume it with `SendMessage`, saying
+`You didn't write <file>. Write it now with the Write tool, starting with the
+verdict line, then reply with that line.` Never write the file for it, and
+never take the verdict from its reply. If it misses again, the step's normal
+"anything else" rule applies (usually `needs-human`).
+
 Name the builder `builder-<id>`. Resume it with `SendMessage` while this
 session has it; if this session didn't spawn it (a resumed run), spawn a new
 `builder` with that name and tell it it's resuming.
@@ -211,7 +218,8 @@ resume the builder mid-round. When every reviewer has finished:
   with `<paths> PR: #<pr>. Final round: <N>.`
 - any CHANGES: `factory/bin/board advance <id> build` and go to **Build**; if
   it refuses because this was the last round, `advance <id> needs-human`.
-- a reviewer wrote no file or no valid `VERDICT:` line: the script refuses
+- a reviewer wrote no file or no valid `VERDICT:` line: resume it once (see
+  **Spawning**) and wait for it. If it still has none, the script refuses
   both moves; `advance <id> needs-human "review-<r> wrote no verdict"`.
 
 ### Approve

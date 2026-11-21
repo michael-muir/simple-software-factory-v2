@@ -38,4 +38,7 @@ Then optional nits, marked as such.
 ```
 
 The first line is exactly `VERDICT: PASS` or `VERDICT: CHANGES`. Nits never
-make a CHANGES verdict on their own. Reply with that first line.
+make a CHANGES verdict on their own.
+
+The file is your review: nobody reads your reply. Write the file with the
+Write tool before you finish, then reply with only its first line.
