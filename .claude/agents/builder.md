@@ -35,6 +35,13 @@ when you finish, and won't let you stop while it fails. Make the checks pass
 honestly: never weaken, skip or special-case a test to get there. Changing a
 test because the behavior changed on purpose is fine; say so in `build.md`.
 
+**Start every pass in sync with the base.** Other jobs merge while you work.
+Before anything else, in every pass below (round 1 too):
+`cd "<worktree>" && git fetch origin && git merge --no-edit origin/<base>`
+(a merge, never a rebase). Usually it's already up to date or merges cleanly.
+If it conflicts, resolve it keeping both your feature and what landed, and say
+so in `build.md`. Building on today's base keeps the final merge small.
+
 **Build round 1:** check `git branch --show-current` prints your branch,
 implement the spec following the repo notes, add or update tests for the
 acceptance criteria, run the checks, and commit.
@@ -50,9 +57,9 @@ the checks, commit.
 feedback and outranks the spec where they conflict. Address it, run the
 checks, commit.
 
-**Sync with the base:** `git fetch origin && git merge origin/<base>` in your
-worktree (a merge, not a rebase), resolve conflicts keeping both your feature
-and what landed, run the checks, commit.
+**Sync with the base:** the merge at the start of the pass is the job here:
+resolve conflicts keeping both your feature and what landed, run the checks,
+commit.
 
 **Resuming** (a new builder for a job in progress): read `build.md` and
 `git log` to see how far the last one got, then carry on.

@@ -43,6 +43,7 @@
   .card .title { margin: 3px 0 6px; font-weight: 600; }
   .card .note { font-size: 11px; color: var(--human); margin: -2px 0 6px;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .note.waiting { color: var(--dim); }
   .pill { font-size: 10px; padding: 0 6px; border-radius: 9px; border: 1px solid currentColor;
           text-transform: lowercase; font-family: ui-sans-serif, system-ui, sans-serif; }
   .pill.low { color: var(--low); } .pill.medium { color: var(--medium); }
@@ -216,7 +217,7 @@ function notice(html) {
 
 function render(data) {
   const jobs = data.jobs || [];
-  const live = jobs.filter(j => RUNNING.includes(j.stage)).length;
+  const live = jobs.filter(j => RUNNING.includes(j.stage) && !j.waiting_for).length;
   const waiting = jobs.filter(j => j.stage === "needs-human").length;
   const cost = jobs.reduce((t, j) => t + (j.cost_usd || 0), 0);
   document.getElementById("stats").innerHTML =
@@ -266,8 +267,8 @@ function card(job) {
   const badge = job.stage === "merged" || job.stage === "rejected"
     ? `<span class="pill ${job.stage}">${job.stage}</span>`
     : (job.risk ? `<span class="pill ${esc(job.risk)}">${esc(job.risk)}</span>` : "");
-  const note = (job.stage === "needs-human" || job.stage === "needs-info") && job.note
-    ? `<div class="note" title="${esc(job.note)}">${esc(job.note)}</div>` : "";
+  const note = (job.stage === "needs-human" || job.stage === "needs-info" || job.waiting_for) && job.note
+    ? `<div class="note${job.waiting_for ? " waiting" : ""}" title="${esc(job.note)}">${esc(job.note)}</div>` : "";
   el.innerHTML = `
     <div class="top"><span>${esc(job.id.split("-")[0])}</span>${badge}
       <span class="links">${issue}${pr}</span></div>

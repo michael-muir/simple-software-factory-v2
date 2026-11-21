@@ -95,10 +95,11 @@ GitHub issue labeled `factory`
         ▼
      intake (fable) ── NEEDS-INFO → question posted on the issue; job parks until the author answers
         │              REJECT     → reason posted on the issue; `factory` label taken off
-        ▼ ACCEPT (maybe cut down), risk + surfaces
+        ▼ ACCEPT (maybe cut down), risk + surfaces + the files it touches
      route (script) → reviewers and models from config.json
         ▼
    spec-writer (opus) → spec.md
+        ▼              waits here (no slot) while a job touching the same files builds
         ▼
      builder (opus) → commits in .worktrees/<id>; the script pushes and opens a draft PR "Closes #n"
         ▼              ▲
@@ -109,6 +110,14 @@ GitHub issue labeled `factory`
     approver (opus) ── APPROVE  → board merge: merge main in, re-run the gate, gh pr merge
                     └─ ESCALATE → needs-human: PR marked ready, decision posted, issue labeled
 ```
+
+Jobs that edit the same files would fight: whichever merges second needs a
+sync round, and its checks and reviews again. So intake lists the files a job
+will likely touch, and a job doesn't start building while another job that
+touches the same files (by that list or by its branch's actual changes) is
+building, in review or merging. It waits in Spec, marked "waiting for …",
+then builds from the updated base. Builders also merge the latest base at the
+start of every pass, so any conflict stays small.
 
 The session running `/factory` is the **orchestrator**. It spawns every
 agent and runs the scripts, and it never writes code, reviews or state

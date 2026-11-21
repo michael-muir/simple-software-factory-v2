@@ -134,7 +134,8 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
    - `resume`: an unfinished job. Run its stage's step (see **Resuming**).
    - `new`: an open `factory` issue with no job and a free slot.
      `factory/bin/board create <issue>` prints the job id; go to **Intake**.
-   - `hold`: no free slot yet. `wait`: needs the author or the user.
+   - `hold`: no free slot yet. `wait`: needs the author or the user, or
+     waits for a job that touches the same files.
      `skip`: finished before. `done`: its PR was merged by hand: stop any of
      its agents still running.
 
@@ -164,7 +165,9 @@ one, else `create` it. Finish with its summary line.
 State is files, so a new session picks up where a dead one stopped. For a
 `resume` job, run its stage's step again: `intake` respawns intake (or, for a
 `needs-info` job whose author replied, first `factory/bin/board advance <id> intake`);
-`spec` respawns the spec writer; `build` spawns a new builder told it is
+`spec` respawns the spec writer, or, when the line says `no longer
+waiting: advance to build`, runs `factory/bin/board advance <id> build` (it
+may print `WAIT:` again) and goes to **Build**; `build` spawns a new builder told it is
 resuming (it reads `build.md` and `git log`), except when the line says
 `rework <k> (fresh builder)`: then spawn a fresh builder with the rework
 prompt, or `sync with base`: then use the sync prompt (see **Build**); `gate` runs the gate; `review`
@@ -190,7 +193,10 @@ Spawn `intake` with `<paths>`. When it returns, `head -1 intake.md`:
 ### Spec
 Spawn `spec-writer` with `<paths>`. When it returns,
 `factory/bin/board advance <id> build` (it refuses a spec without acceptance
-criteria: then `advance <id> needs-human`). Go to **Build**.
+criteria: then `advance <id> needs-human`). Go to **Build**, unless it prints
+`WAIT:`: the job's files overlap a job already building, so it waits in spec
+without a slot. Don't spawn a builder. Run `factory/bin/board queue` and start
+what it offers; the queue resumes the job when the other one is done.
 
 ### Build
 Spawn `builder` named `builder-<id>` with `<paths> Build round 1. Port: <port>.`,

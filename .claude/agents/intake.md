@@ -47,12 +47,20 @@ The rating picks the reviewers (`factory/config.json`): a low-risk change with
 no surfaces gets one code reviewer; `ui` adds UX and UI; `security` or `high`
 adds the security reviewer.
 
+- **Touches**: the files (or folders, ending in `/`) you expect the change to
+  edit, repo-relative, comma-separated, e.g. `src/notes.js, src/styles.css,
+  tests/`. Base it on the code you read; include tests. The factory won't
+  build two jobs that touch the same files at once, so be specific: a whole
+  `src/` would make this job wait for everything. Write `unknown` if you
+  can't tell.
+
 ## Write `<job folder>/intake.md`
 
 ```
 DECISION: ACCEPT | NEEDS-INFO | REJECT
 Risk: low | medium | high
 Surfaces: ui, security | ui | security | none
+Touches: <paths, comma-separated> | unknown
 
 ## Summary
 - 3–5 bullets: what was asked, what you decided, and why.

@@ -407,7 +407,78 @@ def cmd_wait():
 
 
 def running(jobs=None):
-    return [j for j in (jobs if jobs is not None else all_jobs()) if j["stage"] in RUNNING]
+    """Jobs holding a slot. A job waiting for an overlapping job doesn't."""
+    return [j for j in (jobs if jobs is not None else all_jobs())
+            if j["stage"] in RUNNING and not j.get("waiting_for")]
+
+
+# --- overlapping jobs ----------------------------------------------------
+# Jobs that edit the same files fight: whichever merges second needs a sync
+# round, its checks and reviews again. So a job doesn't start building while
+# a job that touches the same files is building, in review or merging; it
+# waits in spec (without a slot) and starts from the updated base instead.
+
+CODE_STAGES = {"build", "gate", "review", "approval", "merge"}
+
+
+def norm_path(p):
+    p = p.strip().strip("`*'\"").strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p
+
+
+def parse_touches(intake_md):
+    """intake.md's `Touches:` line, as repo-relative paths ([] for unknown)."""
+    if not intake_md.exists():
+        return []
+    for line in intake_md.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*touches\s*:\s*(.*)$", line.replace("*", ""), re.I)
+        if m:
+            items = [norm_path(x) for x in re.split(r"[,;]", m.group(1))]
+            return [x for x in items if x and x.lower() not in ("unknown", "none", "n/a")]
+    return []
+
+
+def footprint(job):
+    """The files a job touches: intake's guess plus what its branch has changed."""
+    paths = {norm_path(x) for x in job.get("touches") or [] if norm_path(x)}
+    if job.get("branch") and job["stage"] in CODE_STAGES:
+        diff = run(["git", "diff", "--name-only", f"origin/{job['base']}...{job['branch']}"],
+                   check=False)
+        if diff.returncode == 0:
+            paths.update(p for p in diff.stdout.splitlines() if p.strip())
+    return paths
+
+
+def overlap(a, b):
+    """Paths in a that are in b, or under a folder in b (or the other way round)."""
+    def same(x, y):
+        x, y = x.lower().rstrip("/"), y.lower().rstrip("/")
+        return x == y or x.startswith(y + "/") or y.startswith(x + "/")
+    return sorted({x for x in a for y in b if same(x, y)})
+
+
+def blockers(job, jobs=None):
+    """[(job id, shared paths)] for jobs with code in progress that touch the same files."""
+    mine = footprint(job)
+    if not mine:
+        return []
+    found = []
+    for other in (jobs if jobs is not None else all_jobs()):
+        if other["id"] == job["id"] or other["stage"] not in CODE_STAGES or other.get("waiting_for"):
+            continue
+        shared = overlap(mine, footprint(other))
+        if shared:
+            found.append((other["id"], shared))
+    return found
+
+
+def wait_note(found):
+    ids = ", ".join(i for i, _ in found)
+    files = sorted({p for _, shared in found for p in shared})
+    shown = ", ".join(files[:4]) + (f" and {len(files) - 4} more" if len(files) > 4 else "")
+    return f"waiting for {ids} (same files: {shown})"
 
 
 def require_slot(exclude=None):
@@ -728,6 +799,10 @@ def start_round(job, fresh_budget=False):
     job["round"] = job.get("round", 0) + 1
 
 
+class Wait(Exception):
+    """A job can't start building yet; it waits for an overlapping job."""
+
+
 def advance(job, to, why=""):
     frm = job["stage"]
     refresh(job)
@@ -751,6 +826,7 @@ def advance(job, to, why=""):
         plan = json.loads(run([sys.executable, str(HERE / "route"), job["id"]]).stdout)
         job["risk"], job["surfaces"] = plan["risk"], plan["surfaces"]
         job["agents"] = {"reviewers": plan["reviewers"]}
+        job["touches"] = parse_touches(d / "intake.md")
         comment = section(d / "intake.md", "Comment") or "Accepted. Writing a spec."
         comment_issue(job["issue"], f"**Factory intake: accepted** (risk: {job['risk']})\n\n{comment}")
         edit_labels(job["issue"], remove=[labels()["needs_info"]])
@@ -801,6 +877,15 @@ def advance(job, to, why=""):
             spec = d / "spec.md"
             if not spec.exists() or "acceptance criteria" not in spec.read_text(encoding="utf-8").lower():
                 raise Refused("spec.md is missing or has no Acceptance criteria")
+            found = blockers(job)
+            if found:
+                job["waiting_for"] = [i for i, _ in found]
+                job["note"] = wait_note(found)
+                save(job, job["note"])
+                raise Wait(f"{job['id']}: {job['note']}. It waits in spec without a slot; "
+                           f"`board queue` resumes it when they're done.")
+            if job.pop("waiting_for", None):
+                require_slot(exclude=job["id"])
             job["max_round"] = CFG["max_rounds"]
             start_round(job)
         elif frm == "gate":
@@ -978,13 +1063,26 @@ def cmd_queue():
     jobs = all_jobs()
     slots = CFG["concurrency"] - len(running(jobs))
     for j in jobs:
-        if j["stage"] in RUNNING:
+        if j["stage"] in RUNNING and not j.get("waiting_for"):
             detail = f"round {j.get('round', 0)}"
             if j["stage"] == "build" and str(j.get("note", "")).startswith("rework "):
                 detail += f": {j['note']} (fresh builder)"
             elif j["stage"] == "build" and "has moved and conflicts" in str(j.get("note", "")):
                 detail += ": sync with base"
             lines.append(("resume", j["issue"], j["id"], j["stage"], detail))
+
+    for j in jobs:
+        if j.get("waiting_for") and j["stage"] == "spec":
+            found = blockers(j, jobs)
+            if found:
+                lines.append(("wait", j["issue"], j["id"], j["stage"], wait_note(found)))
+            elif slots > 0:
+                slots -= 1
+                lines.append(("resume", j["issue"], j["id"], j["stage"],
+                              "no longer waiting: advance to build"))
+            else:
+                lines.append(("hold", j["issue"], j["id"], j["stage"],
+                              "no longer waiting; no free slot"))
 
     for j in jobs:
         if j["stage"] == "needs-info":
@@ -1295,6 +1393,8 @@ def main(argv):
         else:
             print(__doc__.strip(), file=sys.stderr)
             sys.exit(2)
+    except Wait as e:
+        print(f"WAIT: {e}")
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         sys.exit(1)
