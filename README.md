@@ -191,6 +191,13 @@ They count the job's agents, not the session that runs the factory.
 Jobs waiting on you or on an issue's author stand out. Click a card to read
 every file the job wrote, each one led by its summary, plus the job's history.
 
+With `board serve`, a job waiting on you has **Approve**, **Rework** and
+**Reject** buttons at the top of its card's popup (**Reject** only, for a job
+waiting on its author). They do the same as `/factory approve`, `rework` and
+`reject`. A running `/factory run` session picks up a rework right away;
+otherwise the next `/factory run` does. The buttons only work from the page
+`board serve` gives you, on your own machine.
+
 Cost is the API-equivalent price of each job's agents, read from Claude
 Code's transcripts and priced with `prices_usd_per_mtok` in `config.json`. On
 a subscription it shows where the spend goes, not what you're billed. Claude

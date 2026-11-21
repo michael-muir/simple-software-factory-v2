@@ -15,7 +15,9 @@ whose precondition isn't met, is refused with a message saying why.
   board backlog [n]               file the first n backlog items as issues
   board sync <job>                re-read the job's files (verdicts, cost)
   board index                     rebuild board.json from every job.json
-  board serve [port]              serve the dashboard with live costs (default 8000)
+  board serve [port]              serve the dashboard with live costs and its
+                                  Approve / Rework / Reject buttons (default 8000)
+  board wait                      wait for a dashboard action, print it, exit
   board summary [job ...]         one line per job: stage, rounds, cost, time
   board init                      check gh and the repo, create the labels
 
@@ -270,28 +272,107 @@ def rebuild_index():
     write_atomic(INDEX, json.dumps(board_view(), indent=2) + "\n")
 
 
+INBOX = JOBS / ".inbox"   # actions taken on the dashboard, for the orchestrator to pick up
+
+# What each dashboard button runs, and the stages it's offered in.
+ACTIONS = {
+    "approve": ("merge", {"needs-human"}),
+    "rework": ("rework", {"needs-human"}),
+    "reject": ("reject", {"needs-human", "needs-info"}),
+}
+
+
 def cmd_serve(port):
     """Serve the dashboard, measuring costs on every poll so they stay current.
 
-    Only reads: job.json files are still written by board commands alone.
-    Listens on 127.0.0.1 only.
+    It also runs the dashboard's Approve, Rework and Reject buttons, through
+    this same script, and leaves a note in factory/jobs/.inbox/ for the
+    orchestrator (see `board wait`). Listens on 127.0.0.1 only; a button only
+    works from a page this server served, which carries a token made at start.
     """
     import http.server
+    import secrets
+    import threading
+
+    token = secrets.token_urlsafe(24)
+    hosts = {f"localhost:{port}", f"127.0.0.1:{port}"}
+    status = {}   # job id -> {"action", "state": working|done|failed, "message"}
+    lock = threading.Lock()
+
+    def act(job_id, action, text):
+        cmd, _ = ACTIONS[action]
+        r = subprocess.run([sys.executable, str(HERE / "board"), cmd, job_id], input=text,
+                           text=True, encoding="utf-8", errors="replace", capture_output=True)
+        out = (r.stdout + r.stderr).strip().splitlines()
+        message = out[-1] if out else ""
+        if action == "approve" and r.returncode == 3:
+            state, message = "done", "main moved and conflicts: a builder will merge it"
+        else:
+            state = "done" if r.returncode == 0 else "failed"
+        with lock:
+            status[job_id] = {"action": action, "state": state, "message": message}
+        if state == "done":
+            INBOX.mkdir(parents=True, exist_ok=True)
+            write_atomic(INBOX / f"{int(time.time() * 1000)}-{job_id}-{action}.json",
+                         json.dumps({"job": job_id, "action": action, "result": message}) + "\n")
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(FACTORY), **kw)
 
-        def do_GET(self):
-            if self.path.split("?")[0] != "/board.json":
-                return super().do_GET()
-            body = json.dumps(board_view(), indent=2).encode("utf-8")
-            self.send_response(200)
+        def reply(self, code, data):
+            body = json.dumps(data, indent=2).encode("utf-8")
+            self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def trusted_host(self):
+            # Blocks DNS rebinding: another site's name pointed at 127.0.0.1.
+            return self.headers.get("Host", "") in hosts
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            if path == "/board.json":
+                view = board_view()
+                with lock:
+                    view["actions"] = dict(status)
+                return self.reply(200, view)
+            if path == "/api/session":
+                if not self.trusted_host():
+                    return self.reply(403, {"error": "wrong host"})
+                return self.reply(200, {"token": token})
+            return super().do_GET()
+
+        def do_POST(self):
+            parts = self.path.split("?")[0].strip("/").split("/")
+            if not self.trusted_host() or self.headers.get("X-Factory-Token") != token:
+                return self.reply(403, {"error": "not allowed"})
+            if len(parts) != 3 or parts[0] != "api" or parts[1] not in ACTIONS:
+                return self.reply(404, {"error": "no such action"})
+            action, job_id = parts[1], parts[2]
+            try:
+                size = min(int(self.headers.get("Content-Length") or 0), 100_000)
+                text = str(json.loads(self.rfile.read(size) or b"{}").get("text") or "").strip()
+            except (ValueError, AttributeError):
+                return self.reply(400, {"error": "send JSON: {\"text\": ...}"})
+            job = next((j for j in all_jobs() if j["id"] == job_id), None)
+            if job is None:
+                return self.reply(404, {"error": f"no job {job_id}"})
+            if job["stage"] not in ACTIONS[action][1]:
+                return self.reply(409, {"error": f"{job_id} is in {job['stage']}"})
+            if action == "approve" and not job.get("pr"):
+                return self.reply(409, {"error": f"{job_id} has no PR to merge"})
+            if action != "approve" and not text:
+                return self.reply(400, {"error": "write a note first"})
+            with lock:
+                if (status.get(job_id) or {}).get("state") == "working":
+                    return self.reply(409, {"error": f"{job_id} is already being handled"})
+                status[job_id] = {"action": action, "state": "working", "message": ""}
+            threading.Thread(target=act, args=(job_id, action, text), daemon=True).start()
+            return self.reply(202, {"started": action})
 
         def log_message(self, *args):
             pass
@@ -302,6 +383,25 @@ def cmd_serve(port):
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+
+
+def cmd_wait():
+    """Block until a dashboard action lands in the inbox, print it, and exit.
+
+    The orchestrator runs this in the background; its exit wakes the session.
+    """
+    while True:
+        notes = sorted(INBOX.glob("*.json")) if INBOX.exists() else []
+        if notes:
+            for n in notes:
+                try:
+                    a = json.loads(n.read_text(encoding="utf-8"))
+                    print(f"{a['action']:8} {a['job']}  {a.get('result', '')}")
+                except (OSError, ValueError, KeyError):
+                    pass
+                n.unlink(missing_ok=True)
+            return
+        time.sleep(2)
 
 
 def running(jobs=None):
@@ -877,7 +977,12 @@ def cmd_queue():
     slots = CFG["concurrency"] - len(running(jobs))
     for j in jobs:
         if j["stage"] in RUNNING:
-            lines.append(("resume", j["issue"], j["id"], j["stage"], f"round {j.get('round', 0)}"))
+            detail = f"round {j.get('round', 0)}"
+            if j["stage"] == "build" and str(j.get("note", "")).startswith("rework "):
+                detail += f": {j['note']} (fresh builder)"
+            elif j["stage"] == "build" and "has moved and conflicts" in str(j.get("note", "")):
+                detail += ": sync with base"
+            lines.append(("resume", j["issue"], j["id"], j["stage"], detail))
 
     for j in jobs:
         if j["stage"] == "needs-info":
@@ -1151,6 +1256,8 @@ def main(argv):
             job = refresh(resolve(args[0]))
             save(job)
             print(f"{job['id']}: {job['stage']}")
+        elif cmd == "wait":
+            cmd_wait()
         elif cmd == "serve":
             cmd_serve(int(args[0]) if args else 8000)
         elif cmd == "index":

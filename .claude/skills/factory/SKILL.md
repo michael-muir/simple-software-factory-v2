@@ -144,7 +144,14 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
    `needs-human`, run `factory/bin/board queue` again and start its `new`
    lines and any `resume` lines for jobs this session isn't already running
    (running jobs always show as `resume`).
-3. When nothing is running or queued, print `factory/bin/board summary <ids>`
+3. **Dashboard buttons.** Once per session, start `factory/bin/board wait`
+   with the Bash tool in the background. It exits when someone presses
+   Approve, Rework or Reject on the dashboard (`board serve` has already run
+   the command) and prints one line per action. When it exits: stop any agents
+   still running for a rejected job, run `factory/bin/board queue` and act on
+   it as in step 2, then start `board wait` again. Leave it running when the
+   run ends, so a later press still wakes you.
+4. When nothing is running or queued, print `factory/bin/board summary <ids>`
    covering the jobs this run moved. Then say what is waiting on people: PRs
    to look at (merging one approves it; `/factory rework` sends it back) and
    intake questions waiting on issue authors.
@@ -158,7 +165,9 @@ State is files, so a new session picks up where a dead one stopped. For a
 `resume` job, run its stage's step again: `intake` respawns intake (or, for a
 `needs-info` job whose author replied, first `factory/bin/board advance <id> intake`);
 `spec` respawns the spec writer; `build` spawns a new builder told it is
-resuming (it reads `build.md` and `git log`); `gate` runs the gate; `review`
+resuming (it reads `build.md` and `git log`), except when the line says
+`rework <k> (fresh builder)`: then spawn a fresh builder with the rework
+prompt, or `sync with base`: then use the sync prompt (see **Build**); `gate` runs the gate; `review`
 spawns only the reviewers whose `review-<r>.md` is missing in the current round;
 `approval` respawns the approver; `merge` runs `factory/bin/board merge <id>`.
 
