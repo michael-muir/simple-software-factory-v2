@@ -146,7 +146,7 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
    (running jobs always show as `resume`).
 3. **Dashboard buttons.** Once per session, start `factory/bin/board wait`
    with the Bash tool in the background. It exits when someone presses
-   Approve, Rework or Reject on the dashboard (`board serve` has already run
+   Approve, Rework, Reject or Answer on the dashboard (`board serve` has already run
    the command) and prints one line per action. When it exits: stop any agents
    still running for a rejected job, run `factory/bin/board queue` and act on
    it as in step 2, then start `board wait` again. Leave it running when the
@@ -278,9 +278,16 @@ a new feature, ask.
   it waits for (the question in `decision.md` or `intake.md`) and link the PR
   or issue.
 - **Feedback on a needs-human job**: that's a rework.
-- **An answer to a needs-info question**: post it on the issue with
-  `gh issue comment <n> --body-file -` (their words verbatim on stdin), then
-  `factory/bin/board advance <id> intake` and go to **Intake**.
+- **An answer to a needs-info question**: pass their words verbatim:
+
+  ```bash
+  factory/bin/board answer <id> <<'EOF'
+  <their answer>
+  EOF
+  ```
+
+  It posts the answer on the issue and moves the job back to intake (or, with
+  no free slot, leaves it for the queue). If it moved, go to **Intake**.
 - **Reject / drop / bench a job** waiting on a human or its author:
 
   ```bash

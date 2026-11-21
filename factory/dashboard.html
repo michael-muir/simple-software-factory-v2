@@ -107,6 +107,7 @@
   .act:disabled { opacity: .45; cursor: default; }
   .act.approve { border-color: var(--pass); color: var(--pass); }
   .act.reject { border-color: var(--changes); color: var(--changes); }
+  .act.answer { border-color: var(--info); color: var(--info); }
   .act.primary { background: var(--merged); border-color: var(--merged); color: #fff; }
   .act.primary.reject { background: var(--changes); border-color: var(--changes); color: #fff; }
   #ask { width: min(520px, 92vw); }
@@ -319,17 +320,22 @@ const ACTION_TEXT = {
              title: () => "Send it back to the builder",
              help: "Say what should change, or leave it empty to have the builder fix why the job stopped. A fresh builder starts a new round.",
              placeholder: "e.g. Make the move buttons 44px tall, and the delete button too" },
+  answer:  { label: "Answer", send: "Post the answer",
+             title: job => `Answer intake's questions on #${job.issue}`,
+             help: "Your answer is posted on the issue as a comment from you, and intake runs again with it.",
+             placeholder: "Answer each of intake's questions. To reread them, Cancel and open intake.md." },
   reject:  { label: "Reject", send: "Reject the job",
              title: () => "Reject this job",
              help: "Say why. This is posted on the issue, and the PR is closed.",
              placeholder: "e.g. Out of scope: we're replacing the board next month" },
 };
 const WORKING = { approve: "Merging: syncing with main and running the checks…",
-                  rework: "Sending it back to the builder…", reject: "Rejecting…" };
+                  rework: "Sending it back to the builder…", reject: "Rejecting…",
+                  answer: "Posting your answer…" };
 
 function offered(job) {
   if (job.stage === "needs-human") return job.pr ? ["approve", "rework", "reject"] : ["rework", "reject"];
-  if (job.stage === "needs-info") return ["reject"];
+  if (job.stage === "needs-info") return ["answer", "reject"];
   return [];
 }
 
@@ -366,7 +372,10 @@ function ask(job, action) {
   document.getElementById("ask-form").onsubmit = async e => {
     e.preventDefault();
     const err = document.getElementById("ask-err");
-    if (action === "reject" && !text.value.trim()) { err.textContent = "Write a reason first."; text.focus(); return; }
+    if ((action === "reject" || action === "answer") && !text.value.trim()) {
+      err.textContent = action === "reject" ? "Write a reason first." : "Write your answer first.";
+      text.focus(); return;
+    }
     send.disabled = true;
     try {
       const res = await fetch(`api/${action}/${encodeURIComponent(job.id)}`, {

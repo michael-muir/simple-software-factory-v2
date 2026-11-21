@@ -10,8 +10,9 @@ whose precondition isn't met, is refused with a message saying why.
   board create <issue>            start a job for an issue (stage: intake)
   board advance <job> <stage>     move a job, with that stage's side effects
   board merge <job>               sync with the base, gate again, merge the PR
-  board rework <job>  < note      a needs-human job goes back to the builder
+  board rework <job>  [< note]    a needs-human job goes back to the builder
   board reject <job>  < reason    drop a job that waits on a human or its author
+  board answer <job>  < answer    post an answer to intake's question; back to intake
   board backlog [n]               file the first n backlog items as issues
   board sync <job>                re-read the job's files (verdicts, cost)
   board index                     rebuild board.json from every job.json
@@ -279,13 +280,14 @@ ACTIONS = {
     "approve": ("merge", {"needs-human"}),
     "rework": ("rework", {"needs-human"}),
     "reject": ("reject", {"needs-human", "needs-info"}),
+    "answer": ("answer", {"needs-info"}),
 }
 
 
 def cmd_serve(port):
     """Serve the dashboard, measuring costs on every poll so they stay current.
 
-    It also runs the dashboard's Approve, Rework and Reject buttons, through
+    It also runs the dashboard's Approve, Rework, Reject and Answer buttons, through
     this same script, and leaves a note in factory/jobs/.inbox/ for the
     orchestrator (see `board wait`). Listens on 127.0.0.1 only; a button only
     works from a page this server served, which carries a token made at start.
@@ -365,8 +367,8 @@ def cmd_serve(port):
                 return self.reply(409, {"error": f"{job_id} is in {job['stage']}"})
             if action == "approve" and not job.get("pr"):
                 return self.reply(409, {"error": f"{job_id} has no PR to merge"})
-            if action == "reject" and not text:
-                return self.reply(400, {"error": "write a reason first"})
+            if action in ("reject", "answer") and not text:
+                return self.reply(400, {"error": f"write {'a reason' if action == 'reject' else 'your answer'} first"})
             with lock:
                 if (status.get(job_id) or {}).get("state") == "working":
                     return self.reply(409, {"error": f"{job_id} is already being handled"})
@@ -1134,6 +1136,22 @@ def cmd_rework(job):
     print(f"{job['id']}: rework-{k}.md saved; build round {job['round']} of {job['max_round']}")
 
 
+def cmd_answer(job):
+    """Post the operator's answer to intake's question, then send the job back to intake."""
+    if job["stage"] != "needs-info":
+        raise Refused(f"{job['id']} is in {job['stage']}; only needs-info jobs take an answer")
+    text = read_stdin("answer")
+    # No MARK: a plain comment from the operator is what answered() counts as a reply.
+    gh("issue", "comment", str(job["issue"]), "--body-file", "-", stdin=text + "\n")
+    try:
+        advance(job, "intake", "the operator answered")
+    except Refused as e:
+        print(f"{job['id']}: answer posted on #{job['issue']}; {e}. It goes back to intake "
+              f"when a slot frees.")
+        return
+    print(f"{job['id']}: answer posted on #{job['issue']}; back to intake")
+
+
 def cmd_reject(job):
     if job["stage"] not in ("needs-info", "needs-human"):
         raise Refused(f"{job['id']} is in {job['stage']}; only jobs waiting on a human or "
@@ -1253,6 +1271,8 @@ def main(argv):
             cmd_merge(resolve(args[0]))
         elif cmd == "rework" and len(args) == 1:
             cmd_rework(resolve(args[0]))
+        elif cmd == "answer" and len(args) == 1:
+            cmd_answer(resolve(args[0]))
         elif cmd == "reject" and len(args) == 1:
             cmd_reject(resolve(args[0]))
         elif cmd == "backlog":
