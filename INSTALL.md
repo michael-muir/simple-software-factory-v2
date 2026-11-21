@@ -15,6 +15,7 @@ missing and how to fix it.
 - `gh auth status` succeeds, and the signed-in account can push to the repo
   and manage its labels (`gh repo view --json viewerPermission` is `ADMIN`,
   `MAINTAIN` or `WRITE`).
+- `claude --version` is 2.1.257 or later (the intake agent runs on Fable).
 - `python3 --version` is 3.9 or later (the scripts use only the standard
   library) and `bash` is available.
 - `git status` is clean, so the install lands as its own commit.
@@ -43,9 +44,9 @@ reads the code, and again before every merge. Replace its placeholder block
 (the lines from `FACTORY-CHECKS-NOT-CONFIGURED` to `exit 1`) with the
 project's real commands:
 
-1. Find them. Look at CI workflows (`.github/workflows/`), `package.json`
-   scripts, `Makefile`, `pyproject.toml`/`tox.ini`, `Cargo.toml`, `go.mod`,
-   and the README. Prefer what CI already runs.
+1. Find them. Look at CI workflows (`.github/workflows/`), `AGENTS.md`,
+   `CLAUDE.md`, `package.json` scripts, `Makefile`, `pyproject.toml`/`tox.ini`,
+   `Cargo.toml`, `go.mod`, and the README. Prefer what CI already runs.
 2. Include, where the project has them: dependency install (if a fresh
    worktree needs it), lint, format **check** (never a formatter that
    rewrites files), typecheck, tests, build.
@@ -97,10 +98,12 @@ escalates a PR it can't merge.
 
 ## 7. Commit and report
 
-Commit the new and changed files (`.claude/`, `factory/`, `.gitignore`) on a
-branch, and open a PR or push to the default branch, whichever the person
-prefers. The factory's worktrees branch from `origin/<base>`, so the install
-has to be on `origin` before the first job.
+Stay on the branch the person is on: don't create or check out another
+branch. Commit the new and changed files (`.claude/`, `factory/`,
+`.gitignore`) there with a one-line message and show the person the diff.
+Ask before pushing. The factory's worktrees branch from `origin/<base>`, so
+if the current branch isn't the default branch, tell the person the install
+must reach the default branch on `origin` before the first job.
 
 Then report, briefly:
 

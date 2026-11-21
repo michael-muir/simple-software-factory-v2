@@ -1,4 +1,4 @@
-# simple-software-factory
+# simple-software-factory-v2
 
 A small, visual software factory for Claude Code that works through your
 GitHub issues. Label an issue `factory` and run `/factory run`: an intake
@@ -31,13 +31,42 @@ git clone https://github.com/michael-muir/simple-software-factory-v2.git
 ./simple-software-factory-v2/install.sh /path/to/your-project
 ```
 
-Then fill in `factory/checks.sh`, run `factory/bin/gate --main` until it
-passes, run `factory/bin/board init` to create the labels, and commit and push.
-The installer refuses to overwrite existing files unless you pass `--force`;
-`--dry-run` shows what it would do.
+Then, in your project:
 
-You need Claude Code with subagents and hooks, `python3` (3.9+), and an
-authenticated [`gh`](https://cli.github.com/) that can push to the repo.
+1. Put your real checks in `factory/checks.sh` and run `factory/bin/gate --main`
+   until it prints `GATE: PASS`.
+2. In `factory/config.json`, set `base_branch` to your default branch,
+   `merge_method` to one your repo allows, and `concurrency` to `1` to start.
+3. Run `factory/bin/board init` to create the GitHub labels.
+4. Commit the install on your default branch and push it. Every job branches
+   from `origin/<base_branch>`, so the factory must be there first.
+
+The installer refuses to overwrite existing files unless you pass `--force`;
+`--dry-run` shows what it would do. `factory/repo.md` (repo notes for the
+agents) is written on the first run if the install didn't write it.
+
+### Requirements
+
+- Claude Code 2.1.257 or later (the intake agent runs on Fable)
+- `git`, `bash` and `python3` 3.9 or later. On Windows, use Git Bash or WSL.
+- An authenticated [`gh`](https://cli.github.com/) that can push to the repo
+  and manage its labels
+
+## First run
+
+1. Open a new Claude Code session in your project's root, so it loads the
+   factory's skill and agents.
+2. Pick one small, clear issue and add the `factory` label to it.
+3. Run `/factory run`. To start from an idea instead of an issue, add a line
+   like `- [ ] Add a --verbose flag` to `factory/backlog.md` and run
+   `/factory next`.
+4. Watch it on the dashboard (see [Dashboard](#dashboard)).
+5. Each job ends as a pull request. The approver merges what it's sure of.
+   The rest are labeled `factory:needs-human`: merge the PR to approve it, or
+   run `/factory rework <id> <what to change>`.
+
+If intake has a question, it asks on the issue. Answer there (or with
+`/factory <your answer>`), then run `/factory run` again.
 
 ## Upgrade in place
 
@@ -53,10 +82,9 @@ and `factory/jobs/` are never touched. It won't run while jobs are in
 progress unless you pass `--force`. The installed version is recorded in
 `.claude/skills/factory/.factory-version`.
 
-Upgrading from the local-merge version: `factory/board.json` is now generated
-and gitignored (the installer tells you to `git rm --cached` it), the factory
-now needs `gh` and a GitHub `origin`, and new projects start from issues
-instead of `/factory <feature>`.
+Coming from the older local-merge version? `factory/board.json` is now
+generated and gitignored (the installer tells you to `git rm --cached` it),
+and the factory now needs `gh` and a GitHub `origin`.
 
 ## How it works
 
