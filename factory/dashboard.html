@@ -44,6 +44,12 @@
   .card .note { font-size: 11px; color: var(--human); margin: -2px 0 6px;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .note.waiting { color: var(--dim); }
+  .card.waiting { border-style: dashed; }
+  .card.waiting .title { color: var(--dim); }
+  .pill.waiting { color: var(--dim); }
+  .card .holding { font-size: 11px; color: var(--dim); margin: -2px 0 6px; }
+  a.job { color: inherit; text-decoration: underline dotted; cursor: pointer; }
+  a.job:hover { color: var(--text); }
   .pill { font-size: 10px; padding: 0 6px; border-radius: 9px; border: 1px solid currentColor;
           text-transform: lowercase; font-family: ui-sans-serif, system-ui, sans-serif; }
   .pill.low { color: var(--low); } .pill.medium { color: var(--medium); }
@@ -215,13 +221,38 @@ function notice(html) {
   document.getElementById("notice").innerHTML = html ? `<div class="notice">${html}</div>` : "";
 }
 
+let jobsById = {};   // for links between a waiting job and the jobs it waits for
+let holding = {};    // job id -> ids of the jobs waiting for it
+
+function shortId(id) { return String(id).split("-")[0]; }
+function jobLink(id) {
+  return `<a class="job" data-job="${esc(id)}" title="${esc(id)}">${esc(shortId(id))}</a>`;
+}
+// "waiting for 003-x (same files: …)" with each job id as a link.
+function waitingHtml(job) {
+  const rest = String(job.note || "").replace(/^waiting for [^(]*/, "");
+  return `waiting for ${(job.waiting_for || []).map(jobLink).join(", ")} ${esc(rest)}`;
+}
+function wireJobLinks(el) {
+  for (const a of el.querySelectorAll("a.job")) a.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    const target = jobsById[a.dataset.job];
+    if (target) openJob(target);
+  };
+}
+
 function render(data) {
   const jobs = data.jobs || [];
+  jobsById = Object.fromEntries(jobs.map(j => [j.id, j]));
+  holding = {};
+  for (const j of jobs) for (const b of j.waiting_for || []) (holding[b] = holding[b] || []).push(j.id);
+  const parked = jobs.filter(j => j.waiting_for).length;
   const live = jobs.filter(j => RUNNING.includes(j.stage) && !j.waiting_for).length;
   const waiting = jobs.filter(j => j.stage === "needs-human").length;
   const cost = jobs.reduce((t, j) => t + (j.cost_usd || 0), 0);
   document.getElementById("stats").innerHTML =
     `<span><b>${live}</b> / ${esc(data.concurrency ?? "?")} running</span>` +
+    (parked ? `<span title="waiting for a job that touches the same files"><b>${parked}</b> waiting</span>` : "") +
     (waiting ? `<span style="color:var(--human)"><b>${waiting}</b> need you</span>` : "") +
     `<span>${money(cost)} total</span>`;
   board.innerHTML = "";
@@ -260,24 +291,30 @@ function roundRows(job, max = 3) {
 
 function card(job) {
   const el = document.createElement("div");
-  el.className = `card ${job.stage}`;
+  el.className = `card ${job.stage}${job.waiting_for ? " waiting" : ""}`;
   const issue = job.issue_url ? `<a href="${esc(job.issue_url)}" target="_blank" rel="noopener">#${esc(job.issue)}</a>`
                               : (job.issue ? `#${esc(job.issue)}` : "");
   const pr = job.pr_url ? `<a href="${esc(job.pr_url)}" target="_blank" rel="noopener">PR ${esc(job.pr)}</a>` : "";
   const badge = job.stage === "merged" || job.stage === "rejected"
     ? `<span class="pill ${job.stage}">${job.stage}</span>`
     : (job.risk ? `<span class="pill ${esc(job.risk)}">${esc(job.risk)}</span>` : "");
-  const note = (job.stage === "needs-human" || job.stage === "needs-info" || job.waiting_for) && job.note
-    ? `<div class="note${job.waiting_for ? " waiting" : ""}" title="${esc(job.note)}">${esc(job.note)}</div>` : "";
+  const note = job.waiting_for
+    ? `<div class="note waiting" title="${esc(job.note || "")}">${waitingHtml(job)}</div>`
+    : (job.stage === "needs-human" || job.stage === "needs-info") && job.note
+      ? `<div class="note" title="${esc(job.note)}">${esc(job.note)}</div>` : "";
+  const held = holding[job.id]
+    ? `<div class="holding">holding up ${holding[job.id].map(jobLink).join(", ")}</div>` : "";
+  const waitPill = job.waiting_for ? `<span class="pill waiting">waiting</span>` : "";
   el.innerHTML = `
-    <div class="top"><span>${esc(job.id.split("-")[0])}</span>${badge}
+    <div class="top"><span>${esc(job.id.split("-")[0])}</span>${badge}${waitPill}
       <span class="links">${issue}${pr}</span></div>
     <div class="title">${esc(job.title || job.id)}</div>
-    ${note}
+    ${note}${held}
     ${roundRows(job)}
     <div class="meta"><span>${job.round ? `round ${esc(job.round)}/${esc(job.max_round)}` : esc(job.stage)}</span>
       <span>${duration(job)}</span><span class="cost">${money(job.cost_usd)}</span></div>`;
-  for (const a of el.querySelectorAll("a")) a.onclick = e => e.stopPropagation();
+  for (const a of el.querySelectorAll("a:not(.job)")) a.onclick = e => e.stopPropagation();
+  wireJobLinks(el);
   el.tabIndex = 0;
   el.setAttribute("role", "button");
   el.setAttribute("aria-label", `${job.id}, ${job.stage}`);
@@ -304,7 +341,8 @@ function fillFacts(job) {
     ["cost (API-equivalent)", money(job.cost_usd)],
     ["time", duration(job)],
   ];
-  if (job.note) facts.push(["note", esc(job.note), "wide"]);
+  // The action bar already shows the note when it's visible.
+  if (job.note && !(token && offered(job).length)) facts.push(["note", esc(job.note), "wide"]);
   document.getElementById("facts").innerHTML =
     facts.map(([k, v, cls]) => `<div${cls ? ` class="${cls}"` : ""}><span>${k}</span>${v}</div>`).join("");
   document.getElementById("history").innerHTML = (job.history || []).slice().reverse()
@@ -355,14 +393,16 @@ function fillActions(job) {
   const list = offered(job);
   if (!token || (!list.length && !st)) { bar.hidden = true; return; }
   bar.hidden = false;
-  let why = esc(job.note || (AGENT_AT_WORK[job.stage] ? `${AGENT_AT_WORK[job.stage]}.` : "")), cls = "";
+  let why = job.waiting_for ? waitingHtml(job)
+    : esc(job.note || (AGENT_AT_WORK[job.stage] ? `${AGENT_AT_WORK[job.stage]}.` : "")), cls = "";
   if (st && st.state === "working") { why = esc(WORKING[st.action]); cls = "working"; }
   else if (st && st.state === "failed") { why = `${esc(ACTION_TEXT[st.action].label)} failed: ${esc(st.message)}`; cls = "failed"; }
   else if (st && st.state === "done" && !list.length) { why = esc(st.message); cls = "done"; }
   const busy = st && st.state === "working";
-  bar.innerHTML = `<span class="why ${cls}" title="${why}">${why}</span>` +
+  bar.innerHTML = `<span class="why ${cls}" title="${esc(job.note || "")}">${why}</span>` +
     list.map(a => `<button class="act ${a}" data-a="${a}"${busy ? " disabled" : ""}>${ACTION_TEXT[a].label}</button>`).join("");
   for (const b of bar.querySelectorAll("button")) b.onclick = () => ask(job, b.dataset.a);
+  wireJobLinks(bar);
 }
 
 const askDialog = document.getElementById("ask");
@@ -440,7 +480,7 @@ function openJob(job) {
   }
   const idx = Math.max(0, files.indexOf(want));
   showFile(job, files[idx], tabs.children[idx]);
-  modal.showModal();
+  if (!modal.open) modal.showModal();
 }
 
 // "## Summary" bullets and the verdict line, shown above the full text.

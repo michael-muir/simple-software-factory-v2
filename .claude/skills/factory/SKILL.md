@@ -83,7 +83,8 @@ Spawn every agent with the Agent tool **in the background**, `subagent_type`
 set to the agent's name. For reviewers, pass `model` from `job.json`
 `agents.reviewers`; for every other agent the frontmatter sets the model.
 Agents reply with one line; you're notified when one finishes and you advance
-that job then. While agents run, don't poll: end your turn with a one-line
+that job then. "When it returns" in the steps below means that notification,
+for that job only; other jobs keep running meanwhile. While agents run, don't poll: end your turn with a one-line
 status. One job's events never touch another job's files, worktree or builder.
 
 **An agent that returns without writing its file** (or whose file has no
@@ -142,7 +143,11 @@ session has it; if this session didn't spawn it (a resumed run), spawn a new
      issue labeled again after a reject; `create` starts a fresh job for it.
 
    The script enforces `concurrency`; start exactly the `resume` and `new`
-   lines. Don't judge issues yourself: intake decides.
+   lines, **all of them at once**: run every `create` first, then spawn every
+   job's agent in a single message (one Agent call per job, all in the
+   background). Never wait for one job's agent before starting the next job:
+   three `new` lines mean three intakes running side by side. Don't judge
+   issues yourself: intake decides.
 2. Each time a job reaches `merged`, `rejected`, `needs-info` or
    `needs-human`, run `factory/bin/board queue` again and start its `new`
    lines and any `resume` lines for jobs this session isn't already running
